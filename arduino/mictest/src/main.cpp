@@ -1,7 +1,13 @@
 /*
-  I2S MEMS Microphone Raw PCM Streamer
+  I2S MEMS Microphone Raw PCM Streamer with Configurable Gain
   Streams raw PCM audio from Fermion I2S MEMS microphone over serial.
   No WAV header - just continuous 16-bit PCM samples for efficient VAD processing.
+  
+  Features:
+  - Configurable microphone gain via serial commands
+  - Real-time gain adjustment without restart
+  - Gain range: 0-16x (shift 0-4 bits)
+  - Serial protocol: Send "G<gain>" to set gain (e.g., "G2" for 2x, "G4" for 4x)
   
   Pin Configuration:
   - SCK:  GPIO 25 (Bit Clock)
@@ -30,11 +36,18 @@
 #define DMA_BUF_LEN       1024
 #define SAMPLE_BUFFER_SIZE 512
 
+// Gain configuration (in bits to shift)
+// Shift 0 = 1x, Shift 1 = 2x, Shift 2 = 4x, Shift 3 = 8x, Shift 4 = 16x
+volatile uint8_t gainShift = 4;  // Default: 16x gain (>> 12 equivalent)
+volatile bool streamingActive = false;
+
 int16_t sampleBuffer[SAMPLE_BUFFER_SIZE];
 
 // Function declarations
 void i2s_install();
 void i2s_setpin();
+void handleSerialCommand();
+void printGainInfo();
 
 void i2s_install() {
   const i2s_config_t i2s_config = {
@@ -65,6 +78,57 @@ void i2s_setpin() {
   i2s_set_pin(I2S_PORT, &pin_config);
 }
 
+void printGainInfo() {
+  Serial.println("\n========================================");
+  Serial.println("I2S MEMS Microphone Raw PCM Streamer");
+  Serial.println("========================================");
+  Serial.print("Current Gain Shift: ");
+  Serial.print(gainShift);
+  Serial.print(" bits (");
+  Serial.print(1 << gainShift);
+  Serial.println("x amplification)");
+  Serial.println("\nGain Control Commands:");
+  Serial.println("  G0 = 1x   (no amplification)");
+  Serial.println("  G1 = 2x   (minimal)");
+  Serial.println("  G2 = 4x   (light)");
+  Serial.println("  G3 = 8x   (medium)");
+  Serial.println("  G4 = 16x  (high - default)");
+  Serial.println("\nOther Commands:");
+  Serial.println("  I = Print this info");
+  Serial.println("  Any other byte = Start streaming PCM");
+  Serial.println("========================================\n");
+}
+
+void handleSerialCommand() {
+  if (Serial.available() > 0) {
+    int cmd = Serial.read();
+    
+    // Handle gain commands (G0-G4)
+    if (cmd == 'G' && Serial.available() > 0) {
+      int gainLevel = Serial.read() - '0';  // Convert ASCII '0'-'4' to 0-4
+      
+      if (gainLevel >= 0 && gainLevel <= 4) {
+        gainShift = gainLevel;
+        Serial.print("Gain set to ");
+        Serial.print(1 << gainShift);
+        Serial.println("x");
+      } else {
+        Serial.println("Invalid gain level. Use G0-G4");
+      }
+      return;
+    }
+    
+    // Handle info command
+    if (cmd == 'I') {
+      printGainInfo();
+      return;
+    }
+    
+    // Any other byte starts streaming
+    streamingActive = true;
+  }
+}
+
 void setup() {
   // Initialize Serial for data streaming
   // 921600 baud required for 16kHz 16-bit audio (32kB/s)
@@ -82,17 +146,20 @@ void setup() {
   i2s_setpin();
   i2s_zero_dma_buffer(I2S_PORT);
   
-  delay(2000);  // Wait 2s for serial connection to stabilize
+  delay(500);  // Wait for serial connection to stabilize
+  
+  // Print welcome message
+  printGainInfo();
 }
 
 void loop() {
-  // Wait for serial connection to send any byte to trigger streaming
-  while (Serial.available() == 0) {
-    delay(10);
-  }
-  // Clear the trigger byte
-  while (Serial.available() > 0) {
-    Serial.read();
+  // Check for serial commands (gain adjustment, info, etc.)
+  handleSerialCommand();
+  
+  // Wait for streaming trigger if not active
+  if (!streamingActive) {
+    delay(100);
+    return;
   }
   
   // CRITICAL: Clear I2S DMA buffers to avoid stale data
@@ -105,22 +172,43 @@ void loop() {
     i2s_read(I2S_PORT, dummyBuffer, sizeof(dummyBuffer), &dummyBytesRead, portMAX_DELAY);
   }
   
-  // Stream raw PCM indefinitely (no header, no size limit)
-  // This allows for true continuous streaming without WAV overhead
+  // Stream raw PCM indefinitely with configurable gain
   size_t bytesRead = 0;
   int32_t i2sBuffer[SAMPLE_BUFFER_SIZE];
   
-  while (Serial) {  // Continue until serial connection is lost
+  while (Serial && streamingActive) {
+    // Check for serial commands during streaming (allow gain adjustment on-the-fly)
+    if (Serial.available() > 0) {
+      int cmd = Serial.read();
+      
+      // Handle gain commands during streaming
+      if (cmd == 'G' && Serial.available() > 0) {
+        int gainLevel = Serial.read() - '0';
+        if (gainLevel >= 0 && gainLevel <= 4) {
+          gainShift = gainLevel;
+          Serial.print("Gain adjusted to ");
+          Serial.print(1 << gainShift);
+          Serial.println("x");
+        }
+        continue;  // Skip this iteration, continue streaming
+      }
+      
+      // Any other command stops streaming
+      streamingActive = false;
+      Serial.println("Streaming stopped");
+      break;
+    }
+    
     // Read from I2S DMA buffer (stereo 32-bit samples)
     i2s_read(I2S_PORT, i2sBuffer, sizeof(i2sBuffer), &bytesRead, portMAX_DELAY);
     
     size_t samplesRead = bytesRead / 8;  // 8 bytes per stereo sample (2 x 32-bit)
     
-    // Convert stereo to mono and send raw PCM
+    // Convert stereo to mono and send raw PCM with configurable gain
     for (size_t i = 0; i < samplesRead; i++) {
       // Extract right channel (SEL=HIGH) from second 32-bit word
-      // Using >> 12 for 16x gain boost
-      int16_t sample16 = (int16_t)(i2sBuffer[i * 2 + 1] >> 12);
+      // Apply configurable gain shift
+      int16_t sample16 = (int16_t)(i2sBuffer[i * 2 + 1] >> (12 - gainShift));
       Serial.write((uint8_t*)&sample16, 2);
     }
     Serial.flush();

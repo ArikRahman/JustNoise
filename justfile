@@ -9,6 +9,10 @@ default:
 # Serial port configuration (macOS CH340 adapter)
 serial_port := "/dev/tty.wchusbserial550D0193611"
 
+# Microphone gain configuration
+# 0=1x, 1=2x, 2=4x, 3=8x, 4=16x (default)
+mic_gain := "4"
+
 # Flash the raw PCM streamer firmware to ESP32
 flash:
     @echo "📦 Flashing ESP32 with raw PCM streamer firmware..."
@@ -52,6 +56,51 @@ vad-stream-custom min_silence="1200":
     @echo "💡 Custom grace period: {{min_silence}}ms"
     @echo ""
     uv run scripts/vad_stream.py {{serial_port}} --min-silence {{min_silence}}
+
+# Stream raw PCM with volume control (DEFAULT: 30% when speaking, 100% when silent)
+vad-stream-with-volume:
+    @echo "🎤 Starting VAD with macOS volume control..."
+    @echo "💡 Volume will drop to 30% when speech detected, back to 100% when silent"
+    @echo ""
+    uv run scripts/vad_stream.py {{serial_port}} --volume-control
+
+# Stream raw PCM with volume control (RELAXED grace period)
+vad-stream-relaxed-with-volume:
+    @echo "🎤 Starting VAD with macOS volume control (1000ms grace period)..."
+    @echo "💡 Volume: 30% when speaking, 100% when silent"
+    @echo ""
+    uv run scripts/vad_stream.py {{serial_port}} --min-silence 1000 --volume-control
+
+# Stream raw PCM with volume control (CUSTOM volumes and grace period)
+# Usage: just vad-stream-volume-custom 1000 60 100
+#   Args: grace_period(ms) speech_volume(%) silence_volume(%)
+#   Example: just vad-stream-volume-custom 1200 50 100
+vad-stream-volume-custom grace_period="1000" speech_volume="30" silence_volume="100":
+    @echo "🎤 Starting VAD with custom volume control..."
+    @echo "💡 Grace period: {{grace_period}}ms | Speech volume: {{speech_volume}}% | Silence volume: {{silence_volume}}%"
+    @echo ""
+    uv run scripts/vad_stream.py {{serial_port}} --min-silence {{grace_period}} --volume-control --speech-volume {{speech_volume}} --silence-volume {{silence_volume}}
+
+# Alias: volume control with even shorter volumes (podcast setup)
+vad-stream-volume-podcast grace_period="1000" speech_volume="10" silence_volume="100":
+    @echo "🎤 Starting VAD for podcast recording (ultra-quiet during speech)..."
+    @echo "💡 Grace period: {{grace_period}}ms | Speech volume: {{speech_volume}}% | Silence volume: {{silence_volume}}%"
+    @echo ""
+    uv run scripts/vad_stream.py {{serial_port}} --min-silence {{grace_period}} --volume-control --speech-volume {{speech_volume}} --silence-volume {{silence_volume}}
+
+# Alias: moderate volume reduction for gaming/focus
+vad-stream-volume-gaming grace_period="1500" speech_volume="50" silence_volume="75":
+    @echo "🎤 Starting VAD for gaming/focus mode (moderate volume)..."
+    @echo "💡 Grace period: {{grace_period}}ms | Speech volume: {{speech_volume}}% | Silence volume: {{silence_volume}}%"
+    @echo ""
+    uv run scripts/vad_stream.py {{serial_port}} --min-silence {{grace_period}} --volume-control --speech-volume {{speech_volume}} --silence-volume {{silence_volume}}
+
+# Alias: gentle volume reduction for office
+vad-stream-volume-office grace_period="1000" speech_volume="75" silence_volume="100":
+    @echo "🎤 Starting VAD for office (gentle volume reduction)..."
+    @echo "💡 Grace period: {{grace_period}}ms | Speech volume: {{speech_volume}}% | Silence volume: {{silence_volume}}%"
+    @echo ""
+    uv run scripts/vad_stream.py {{serial_port}} --min-silence {{grace_period}} --volume-control --speech-volume {{speech_volume}} --silence-volume {{silence_volume}}
 
 # Capture raw PCM stream to audio files (time-based splitting)
 capture-pcm:
@@ -222,3 +271,48 @@ flash-and-monitor-continuous: flash
     @echo "✅ Firmware flashed! Starting CONTINUOUS vocal monitor in 2 seconds..."
     @sleep 2
     @just vad-monitor-continuous
+
+# Microphone gain control - interactive mode
+mic-gain:
+    @echo "🎙️  Opening microphone gain controller..."
+    @echo "💡 Use this to adjust microphone sensitivity in real-time"
+    @echo ""
+    uv run scripts/mic_gain_control.py {{serial_port}} --interactive
+
+# Microphone gain - set specific level
+# Usage: just mic-gain-set 3
+# Levels: 0=1x, 1=2x, 2=4x, 3=8x, 4=16x
+mic-gain-set gain="4":
+    @echo "🎙️  Setting microphone gain to {{gain}}..."
+    uv run scripts/mic_gain_control.py {{serial_port}} --gain {{gain}}
+
+# Microphone gain - preset for distant sources (maximum sensitivity)
+mic-gain-max:
+    @echo "🎙️  Setting microphone to MAXIMUM GAIN (16x)..."
+    @echo "💡 Use for distant sources or low volume environments"
+    @echo ""
+    uv run scripts/mic_gain_control.py {{serial_port}} --gain 4
+
+# Microphone gain - preset for medium distance
+mic-gain-medium:
+    @echo "🎙️  Setting microphone to MEDIUM GAIN (8x)..."
+    @echo "💡 Use for typical classroom/office distance"
+    @echo ""
+    uv run scripts/mic_gain_control.py {{serial_port}} --gain 3
+
+# Microphone gain - preset for close sources (low sensitivity)
+mic-gain-min:
+    @echo "🎙️  Setting microphone to MINIMUM GAIN (1x)..."
+    @echo "💡 Use for loud sources very close to microphone"
+    @echo ""
+    uv run scripts/mic_gain_control.py {{serial_port}} --gain 0
+
+# Microphone gain - test mode (adjust in real-time while listening)
+mic-gain-test gain="3":
+    @echo "🎙️  Testing microphone gain {{gain}} while streaming..."
+    @echo "💡 Run 'just vad-stream-relaxed' in another terminal to see VAD output"
+    @echo "💡 Press 'G' then a number (0-4) to adjust gain on-the-fly"
+    @echo ""
+    uv run scripts/mic_gain_control.py {{serial_port}} --gain {{gain}}
+    @echo ""
+    @echo "💡 To adjust further, use: just mic-gain-set <level>"

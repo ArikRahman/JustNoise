@@ -18,6 +18,7 @@ Usage:
 import argparse
 import os
 import struct
+import subprocess
 import sys
 import time
 from datetime import datetime
@@ -42,7 +43,14 @@ class PCMVADMonitor:
     """Real-time VAD monitor for raw PCM stream."""
 
     def __init__(
-        self, serial_port, baudrate=921600, min_silence_ms=500, min_speech_ms=0
+        self,
+        serial_port,
+        baudrate=921600,
+        min_silence_ms=500,
+        min_speech_ms=0,
+        enable_volume_control=False,
+        speech_volume=30,
+        silence_volume=100,
     ):
         self.serial_port = serial_port
         self.baudrate = baudrate
@@ -51,6 +59,11 @@ class PCMVADMonitor:
         self.vad = SileroVAD(
             sample_rate=16000, device="cpu", min_silence_duration_ms=min_silence_ms
         )
+
+        # Volume control settings
+        self.enable_volume_control = enable_volume_control
+        self.speech_volume = speech_volume
+        self.silence_volume = silence_volume
 
         # Stats
         self.total_chunks = 0
@@ -79,8 +92,30 @@ class PCMVADMonitor:
         print(
             f"Min Speech:       {self.min_speech_ms}ms (minimum duration to accept speech)"
         )
+        if self.enable_volume_control:
+            print(
+                f"Volume Control:   ENABLED ({self.speech_volume}% when speaking, {self.silence_volume}% when silent)"
+            )
+        else:
+            print(f"Volume Control:   DISABLED")
         print("=" * 70)
         print("\n⏳ Waiting for ESP32 raw PCM stream...\n")
+
+    def set_volume(self, volume):
+        """Set macOS system volume using osascript."""
+        if not self.enable_volume_control:
+            return
+
+        try:
+            applescript = f"set volume output volume {volume}"
+            subprocess.run(
+                ["osascript", "-e", applescript],
+                check=False,
+                capture_output=True,
+                timeout=5,
+            )
+        except Exception as e:
+            print(f"⚠️  Volume control error: {e}")
 
     def print_alert(self, message, alert_type="info"):
         """Print colored alert message."""
@@ -89,10 +124,14 @@ class PCMVADMonitor:
         if alert_type == "speech_start":
             print(f"\n{'🗣️  ' * 10}")
             print(f"[{timestamp}] 🔴 VOCALS DETECTED - SPEECH STARTED!")
+            if self.enable_volume_control:
+                print(f"[{timestamp}] 🔊 Volume set to {self.speech_volume}%")
             print(f"{'🗣️  ' * 10}\n")
         elif alert_type == "speech_end":
             duration = (datetime.now() - self.current_speech_start).total_seconds()
             print(f"\n[{timestamp}] 🟢 Speech ended (duration: {duration:.2f}s)")
+            if self.enable_volume_control:
+                print(f"[{timestamp}] 🔊 Volume set to {self.silence_volume}%")
         elif alert_type == "info":
             print(f"[{timestamp}] ℹ️  {message}")
         else:
@@ -190,6 +229,7 @@ class PCMVADMonitor:
                         if not self.last_state:
                             # Speech started!
                             self.current_speech_start = datetime.now()
+                            self.set_volume(self.speech_volume)
                             self.print_alert("", "speech_start")
                             self.last_state = True
                             self.speech_chunks += 1
@@ -209,6 +249,7 @@ class PCMVADMonitor:
 
                             # Only end speech if silence exceeds threshold
                             if silence_counter >= silence_threshold:
+                                self.set_volume(self.silence_volume)
                                 self.print_alert("", "speech_end")
                                 segment_duration = (
                                     datetime.now() - self.current_speech_start
@@ -277,7 +318,24 @@ def main():
         "--min-speech",
         type=int,
         default=0,
-        help="Minimum speech duration in milliseconds before accepting as speech (default: 0ms)",
+        help="Minimum speech duration in milliseconds before accepting speech (default: 0ms)",
+    )
+    parser.add_argument(
+        "--volume-control",
+        action="store_true",
+        help="Enable macOS volume control (lowers volume when speech detected, raises when silent)",
+    )
+    parser.add_argument(
+        "--speech-volume",
+        type=int,
+        default=30,
+        help="Volume level when speech is detected (default: 30%%)",
+    )
+    parser.add_argument(
+        "--silence-volume",
+        type=int,
+        default=100,
+        help="Volume level when silent (default: 100%%)",
     )
 
     args = parser.parse_args()
@@ -288,6 +346,9 @@ def main():
         args.baudrate,
         min_silence_ms=args.min_silence,
         min_speech_ms=args.min_speech,
+        enable_volume_control=args.volume_control,
+        speech_volume=args.speech_volume,
+        silence_volume=args.silence_volume,
     )
     monitor.print_header()
 
