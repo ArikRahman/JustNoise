@@ -157,14 +157,80 @@ Quick start (developer):
 - PIR HC-SR501: digital input with stable power and appropriate timeout/trigger configuration.
 - AHT10: I2C SDA/SCL to ESP32 I2C pins; ensure proper pull-ups.
 
+## WAV File Streaming Over Serial (Current Work)
+
+### Objective
+Stream 16-bit mono PCM audio recorded on the ESP32 to a computer via USB serial connection as a binary WAV file, bypassing MQTT for direct offline recording.
+
+### Implementation
+
+**ESP32 Firmware (`arduino/mictest/wav_recorder.ino`):**
+- Records ADC samples from MAX4466 microphone on pin 35 (IO35) at 16 kHz
+- Streams binary WAV file over serial at 115200 baud
+- WAV header (44 bytes) sent first, followed by audio samples (2 bytes each, 16-bit little-endian)
+- Recording duration: 10 seconds (configurable)
+- Total file size: ~320 KB
+
+**Key Challenges & Solutions:**
+
+1. **Binary vs. Text Mixing**: Early attempts mixed Serial.println() debug output with binary data, corrupting the stream. 
+   - Solution: Removed all text output; now sends pure binary header + samples.
+
+2. **Header Initialization**: C++ struct initialization with member initializers was unreliable for binary transmission.
+   - Solution: Manually build WAV header byte-by-byte with explicit bit-shifting for endianness.
+
+3. **Serial Synchronization**: Python capture script would timeout waiting for RIFF header because:
+   - ESP32's loop() already sent data before script connected
+   - Solution: Refactored to use RTS reset signal to force ESP32 restart on script connect.
+
+4. **Serial Port Reset**: DTR control didn't work on macOS with CH340 adapters.
+   - Solution: Switched to RTS control; added fallback polling with progress feedback.
+
+**Python Capture Script (`scripts/capture_wav.py`):**
+- Opens serial port and attempts RTS reset to trigger ESP32 restart
+- Searches incoming buffer for RIFF signature (0x52494646)
+- Reads complete 44-byte WAV header
+- Extracts audio data size from header
+- Streams remaining audio samples to file
+- Validates WAV format before writing
+
+**Current Status:**
+- Firmware compiles and uploads successfully (281 KB binary)
+- Serial communication confirmed: ESP32 sending data (verified with raw read test showing non-zero bytes)
+- WAV header reconstruction verified with byte-by-byte assembly
+- Script can open serial port and attempts reset
+- **Blocker**: RIFF signature not yet appearing in stream; likely timing issue with reset signal or bootloader noise
+
+**Debugging Steps Attempted:**
+1. Verified serial port connection with basic read (received data)
+2. Tested with and without microphone connected (mic disconnect was blocking ADC)
+3. Tried simplified sketch with dummy data to isolate hardware/ADC issues
+4. Built WAV header manually to rule out struct alignment issues
+5. Added RTS reset to force synchronization
+6. Monitored `in_waiting` buffer for data arrival
+
+**Next Steps:**
+1. Run raw binary dump after reset to see exact byte sequence
+2. Verify WAV header bytes match expected RIFF signature
+3. Adjust reset timing (may need longer delay after RTS)
+4. Consider adding initial marker byte for synchronization
+5. Test with file playback once capture succeeds
+
+### Hardware Setup
+- **ESP32**: WROOM-32 dev board
+- **Microphone**: MAX4466 output → GPIO 35 (ADC1)
+- **USB Serial**: CH340 USB-to-serial adapter @ 115200 baud
+- **Recording Parameters**: 16 kHz sample rate, 16-bit depth, mono, 10 second duration
+
 ## Contribution & Roadmap
 
 - Short-term:
+  - Complete WAV streaming pipeline (debug RIFF header synchronization)
   - Improve ESP32 feature set (band energies via lightweight FFT), implement robust MQTT reconnect and NTP time sync.
   - Add unit & integration tests, and a Docker Compose for local CI.
 - Mid-term:
   - Implement model evaluation suite and automated retraining pipeline.
   - Add secure deployment artifacts (systemd unit files, certificate management).
 
-If you want, I can implement any of the next steps (ESP32 FFT features, add MQTT TLS config, Docker Compose + CI, or model evaluation and retraining). Tell me which to do next.
+If you want, I can implement any of the next steps (WAV streaming completion, ESP32 FFT features, add MQTT TLS config, Docker Compose + CI, or model evaluation and retraining). Tell me which to do next.
 
