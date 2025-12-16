@@ -98,6 +98,10 @@ void setup() {
   // Initialize ADC for microphone
   analogReadResolution(12);  // 12-bit ADC (0-4095)
   pinMode(MIC_PIN, INPUT);
+  
+  // Calibrate DC offset by averaging several samples
+  // The MAX4466 outputs around VCC/2 (1.65V on 3.3V = ~2048 on 12-bit ADC)
+  // We need to measure this to remove the DC bias
 }
 
 void loop() {
@@ -105,23 +109,34 @@ void loop() {
   uint32_t totalSamples = RECORDING_TIME_SEC * SAMPLE_RATE;
   uint32_t dataSize = totalSamples * 2;
   
+  // Measure DC offset (average value when quiet)
+  uint32_t dcOffsetSum = 0;
+  const int calibrationSamples = 1000;
+  for (int i = 0; i < calibrationSamples; i++) {
+    dcOffsetSum += analogRead(MIC_PIN);
+    delayMicroseconds(100);
+  }
+  int16_t dcOffset = dcOffsetSum / calibrationSamples;
+  
   // Send WAV header
   sendWAVHeader(dataSize);
   
   // Record and send real audio samples from microphone
-  unsigned long startTime = millis();
   unsigned long sampleDelay = 1000000 / SAMPLE_RATE;  // microseconds between samples
   
   for (uint32_t i = 0; i < totalSamples; i++) {
     unsigned long sampleStart = micros();
     
     // Read ADC value from microphone (12-bit: 0-4095)
-    uint16_t adcValue = analogRead(MIC_PIN);
+    int16_t adcValue = analogRead(MIC_PIN);
     
-    // Convert 12-bit ADC to 16-bit sample (scale up)
-    uint16_t sample16 = adcValue << 4;  // Shift left by 4 bits (12-bit -> 16-bit)
+    // Remove DC offset to center around 0
+    int16_t centeredValue = adcValue - dcOffset;
     
-    // Send sample as little-endian 16-bit
+    // Scale from 12-bit signed (-2048 to +2048) to 16-bit signed (-32768 to +32767)
+    int16_t sample16 = centeredValue << 4;  // Multiply by 16
+    
+    // Send sample as little-endian 16-bit signed
     Serial.write((uint8_t*)&sample16, 2);
     
     // Flush periodically to avoid buffer overflow
