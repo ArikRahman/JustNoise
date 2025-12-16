@@ -316,3 +316,20 @@ mic-gain-test gain="3":
     uv run scripts/mic_gain_control.py {{serial_port}} --gain {{gain}}
     @echo ""
     @echo "💡 To adjust further, use: just mic-gain-set <level>"
+
+# Start TCP audio server for ESP32 WiFi streaming
+tcp-server host="10.45.232.125" port="8080":
+    @echo "🎵 Starting TCP Audio Server..."
+    @echo "💡 Server will listen on {{host}}:{{port}}"
+    @echo "💡 ESP32 will automatically connect and stream PCM audio"
+    @echo "💡 Press Ctrl+C to stop server"
+    @echo ""
+    uv run scripts/tcp_audio_server.py --host {{host}} --port {{port}}
+
+# Start TCP server with default settings (10.45.232.125:8080)
+tcp-server-default:
+    @echo "🎵 Starting TCP Audio Server (default config)..."
+    @echo "💡 Listening on 10.45.232.125:8080"
+    @echo "💡 ESP32 will connect and stream audio automatically"
+    @echo ""
+    just tcp-server 10.45.232.125 8080

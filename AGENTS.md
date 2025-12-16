@@ -219,19 +219,22 @@ Quick start (developer):
 - PIR HC-SR501: digital input with stable power and appropriate timeout/trigger configuration.
 - AHT10: I2C SDA/SCL to ESP32 I2C pins; ensure proper pull-ups.
 
-## WAV File Streaming Over Serial (WORKING — sampling issue in progress)
+## Audio Streaming (Serial & WiFi TCP)
 
 ### Objective
-Stream 16-bit mono PCM audio recorded on the ESP32 to a computer via USB serial connection as a binary WAV file, bypassing MQTT for direct offline recording.
+Stream 16-bit mono PCM audio recorded on the ESP32 via USB serial (for WAV files) or WiFi TCP (for real-time network streaming), bypassing MQTT for direct audio capture and transmission.
 
-### Implementation Status: **WORKING (I2S MEMS Mic Configured)**
+### Implementation Status: **WORKING (I2S MEMS Mic + WiFi TCP)**
 
 **ESP32 Firmware (`arduino/mictest/src/main.cpp`):**
-- Streams binary WAV file over serial at **921600 baud** (increased from 115200 to prevent buffer overflows)
+- **Serial Mode**: Streams binary WAV files over USB serial at 921600 baud
+- **WiFi TCP Mode**: Streams raw PCM over WiFi TCP to server at 10.45.232.125:8080
 - Uses I2S peripheral for high-quality audio capture from Fermion I2S MEMS Mic
-- WAV header (44 bytes) sent first, followed by audio samples (2 bytes each, 16-bit little-endian)
-- Recording duration: 10 seconds (configurable via `RECORDING_TIME_SEC`)
-- **Trigger Mechanism**: Waits for serial byte 'G' before starting recording to ensure sync
+- Automatic WiFi connection to "yours" network with password "yours123"
+- Configurable microphone gain (G0-G4) via serial or TCP commands
+- **Trigger Mechanisms**:
+  - Serial: 'G' byte starts WAV streaming, 'S' starts TCP streaming
+  - TCP: Commands sent over network connection
 
 **Python Capture Script (`scripts/capture_wav.py`):**
 - Opens serial port at **921600 baud**
@@ -243,14 +246,22 @@ Stream 16-bit mono PCM audio recorded on the ESP32 to a computer via USB serial 
 - Validates WAV format before writing
 - Output: Valid 16kHz 16-bit mono PCM WAV file
 
-**Current Status: WORKING (I2S Audio Capture + Serial Streaming)**
+**TCP Server (for network streaming):**
+- Listens on 10.45.232.125:8080
+- Receives raw 16-bit PCM audio stream
+- Can process/save audio in real-time
+- Supports remote gain control commands
+
+**Current Status: WORKING (I2S Audio Capture + Serial/WiFi Streaming)**
 - **Hardware**: Fermion I2S MEMS Microphone (SCK=25, WS=16, SD=26, SEL=2)
 - **Configuration**: Stereo Mode (Right+Left), extracting Right channel (SEL=HIGH)
-- **Gain**: 16x digital gain applied (bit shift `>> 12`)
+- **Gain**: Default 4x digital gain (calibrated), adjustable G0-G4
+- **Networking**: Auto-connects to WiFi "yours"/"yours123", TCP to 10.45.232.125:8080
 - **Fixes Applied**:
   - **Silent Audio**: Fixed by using `I2S_CHANNEL_FMT_RIGHT_LEFT` (Stereo) instead of `ONLY_RIGHT`.
   - **Repetition/Stutter**: Fixed by flushing I2S DMA buffers (`i2s_zero_dma_buffer`) before recording.
   - **"Fast" Playback**: Identified as Serial bandwidth bottleneck (32kB/s audio > 11.5kB/s serial). **Fix: Increasing baud rate to 921600.**
+  - **WiFi TCP**: Added automatic WiFi connection and TCP streaming capability.
 
 **Key Challenges & Solutions:**
 
@@ -275,13 +286,21 @@ Stream 16-bit mono PCM audio recorded on the ESP32 to a computer via USB serial 
    pio run -t upload --upload-port /dev/tty.wchusbserial550D0193611
    ```
 
-2. **Capture Recording:**
+2. **Serial Mode (WAV Recording):**
    ```bash
    uv run scripts/capture_wav.py /dev/tty.wchusbserial550D0193611 recording.wav
    ```
 
+3. **WiFi TCP Mode (Network Streaming):**
+   - ESP32 automatically connects to WiFi and TCP server
+   - Send 'S' over serial to start streaming
+   - Send 'T' to stop, 'G0-G4' to adjust gain
+   - Server receives continuous PCM stream
+
 
 **Output Specifications:**
+
+**Serial Mode (WAV Files):**
 - **Format**: WAV (RIFF), Microsoft PCM
 - **Sample Rate**: 16000 Hz
 - **Bit Depth**: 16-bit
@@ -289,12 +308,57 @@ Stream 16-bit mono PCM audio recorded on the ESP32 to a computer via USB serial 
 - **Duration**: 10 seconds
 - **File Size**: 320,044 bytes (44-byte header + 320,000 bytes audio data)
 
+**WiFi TCP Mode (Raw PCM):**
+- **Format**: Raw 16-bit PCM (no header)
+- **Sample Rate**: 16000 Hz
+- **Bit Depth**: 16-bit
+- **Channels**: Mono (1)
+- **Bitrate**: ~256 kbps
+- **Protocol**: Continuous TCP stream
+
 ### Hardware Setup
 - **ESP32**: WROOM-32 dev board
-- **Microphone**: MAX4466 electret mic amplifier → GPIO 35 (ADC1_CH7)
-- **USB Serial**: CH340 USB-to-serial adapter @ 115200 baud
+- **Microphone**: Fermion I2S MEMS Microphone (SCK=25, WS=16, SD=26, SEL=2)
+- **USB Serial**: CH340 USB-to-serial adapter @ 921600 baud
+- **WiFi**: Auto-connects to "yours" network
+- **TCP Server**: Streams to 10.45.232.125:8080
 - **Power**: USB 5V
-- **Recording Parameters**: 16 kHz sample rate, 16-bit depth, mono, 10 second duration
+- **Recording Parameters**: 16 kHz sample rate, 16-bit depth, mono
+
+### Microphone Gain Calibration
+
+**Problem**: Captured audio sounds extremely loud and distorted ("earrape")?
+
+**Root Cause**: The ESP32 firmware defaults to maximum gain (16x amplification), which may be too high for your microphone setup or environment.
+
+**Solution**: Adjust the microphone gain level to match your setup.
+
+**Gain Levels Available**:
+- **G0**: 1x gain (minimum amplification - for very loud environments)
+- **G1**: 2x gain (minimal amplification)
+- **G2**: 4x gain (light amplification - recommended for most classroom setups)
+- **G3**: 8x gain (medium amplification)
+- **G4**: 16x gain (high amplification - default, may cause distortion)
+
+**Calibration Procedure**:
+1. **Test current gain**: `just mic-gain-test 3` (starts streaming with 8x gain)
+2. **Capture test audio**: `just capture-pcm-duration 3` (3-second recording)
+3. **Check quality**: `just play-last` (play the recording)
+4. **Adjust if needed**:
+   - Too loud/distorted: `just mic-gain-set 2` (4x gain)
+   - Still too loud: `just mic-gain-set 1` (2x gain)
+   - Too quiet: `just mic-gain-set 3` (8x gain)
+5. **Repeat** steps 2-4 until audio sounds clear and natural
+
+**Real-time Adjustment**: Gain can be changed during streaming by sending 'G' followed by the gain level (0-4) over serial.
+
+**Recommended Defaults**:
+- **Classroom/office**: G2 (4x gain)
+- **Quiet environment**: G3 (8x gain)
+- **Noisy environment**: G1-G2 (2x-4x gain)
+- **Very loud environment**: G0-G1 (1x-2x gain)
+
+**Note**: The firmware defaults to G4 (16x) for maximum sensitivity, but this often causes clipping/distortion. Always calibrate for your specific microphone and environment.
 
 ## Contribution & Roadmap
 

@@ -18,9 +18,13 @@ See `AGENTS.md` for complete project details.
 - `shared`: Shared MQTT topics and schemas and utilities.
 - `scripts`: Helper scripts including WAV capture utility.
 
-## WAV Recording (Serial Mode)
+## Audio Streaming (Serial & WiFi TCP)
 
-### Quick Start
+The ESP32 supports two streaming modes:
+
+### Serial Mode (USB)
+
+**Quick Start:**
 
 1. **Hardware Setup:**
    - Connect MAX4466 microphone to ESP32 GPIO 35
@@ -44,17 +48,70 @@ See `AGENTS.md` for complete project details.
    # or aplay recording.wav on Linux
    ```
 
-### Output
-- **Format**: 16-bit mono PCM WAV
-- **Sample Rate**: 16 kHz
-- **Duration**: 10 seconds
-- **File Size**: ~320 KB
+### WiFi TCP Mode (Network Streaming)
 
-The ESP32 continuously loops, sending a new recording every 12 seconds. The Python script automatically finds the WAV header in the stream and captures the audio data.
+**Features:**
+- Automatic WiFi connection to "yours" network
+- TCP streaming to server at 10.45.232.125:8080
+- Real-time audio streaming over network
+- Configurable gain via TCP commands
+
+**Setup:**
+1. **Flash firmware** (same as above)
+2. **ESP32 automatically connects** to WiFi "yours" with password "yours123"
+3. **Start streaming** by sending 'S' command over serial
+4. **Server receives** raw PCM audio at 10.45.232.125:8080
+
+**Commands:**
+- `S` - Start TCP streaming
+- `T` - Stop streaming
+- `G0-G4` - Set gain (0=1x, 1=2x, 2=4x, 3=8x, 4=16x)
+- `I` - Show status
+
+**Output:**
+- **Format**: Raw 16-bit mono PCM (no WAV header)
+- **Sample Rate**: 16 kHz
+- **Bitrate**: ~256 kbps
+- **Protocol**: TCP stream to configured server
+
+### Microphone Gain Troubleshooting
+
+**Problem**: Audio sounds extremely loud and distorted ("earrape")?
+
+**Solution**: The ESP32 firmware defaults to 16x gain (G4), which may be too high for your microphone setup.
+
+**Quick Fix**:
+```bash
+# Check current gain
+just mic-gain-test 3  # Test with 8x gain
+
+# Set lower gain if still too loud
+just mic-gain-set 2   # 4x gain (recommended for most setups)
+just mic-gain-set 1   # 2x gain (for very sensitive microphones)
+just mic-gain-set 0   # 1x gain (minimum, for loud environments)
+```
+
+**Gain Levels**:
+- **G0**: 1x gain (minimum amplification)
+- **G1**: 2x gain (minimal)
+- **G2**: 4x gain (light - recommended for most setups)
+- **G3**: 8x gain (medium)
+- **G4**: 16x gain (high - default, may cause distortion)
+
+**Testing Audio Quality**:
+```bash
+# Capture a test recording
+just capture-pcm-duration 3
+
+# Play it back
+just play-last
+
+# Adjust gain and repeat until audio sounds clear
+```
+
+**Note**: Gain can be adjusted in real-time during streaming. Send 'G' followed by the gain level (0-4) to change gain on-the-fly.
 
 ## Voice Activity Detection (VAD)
-
-Real-time speech detection using Silero VAD, perfect for detecting when someone is talking in a classroom.
 
 ### Quick Start
 
