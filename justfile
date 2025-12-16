@@ -67,6 +67,12 @@ setup:
     uv sync
     @echo "✅ Dependencies installed"
 
+# Setup with VAD support (installs PyTorch for Silero VAD)
+setup-vad:
+    @echo "📦 Setting up project with VAD support..."
+    uv sync --extra vad
+    @echo "✅ Dependencies installed (including PyTorch for VAD)"
+
 # Monitor serial output (for debugging)
 monitor:
     @echo "👀 Monitoring serial port {{serial_port}}..."
@@ -92,3 +98,50 @@ decision:
 simulate:
     @echo "🎭 Publishing simulated sensor data..."
     uv run scripts/publish_sample.py
+
+# Run VAD from live serial stream
+vad-live:
+    @echo "🎤 Starting live Voice Activity Detection from ESP32..."
+    uv run pi-aggregator/vad.py --serial {{serial_port}}
+
+# Run VAD on a WAV file (for testing)
+vad-test file="recording.wav":
+    @echo "🎤 Running Voice Activity Detection on {{file}}..."
+    uv run pi-aggregator/vad.py --file {{file}}
+
+# Test VAD installation
+test-vad:
+    @echo "🧪 Testing Silero VAD installation..."
+    uv run scripts/test_vad.py
+
+# Monitor live vocals from ESP32 (CLI debugger)
+vad-monitor:
+    @echo "🎧 Starting live vocal monitor..."
+    @echo "💡 Speak near the microphone to see real-time detection!"
+    @echo ""
+    @echo "Note: Make sure ESP32 firmware is flashed first (just flash)"
+    @echo ""
+    uv run scripts/vad_monitor.py {{serial_port}}
+
+# Monitor vocals continuously (loops indefinitely)
+vad-monitor-continuous:
+    @echo "🔄 Starting CONTINUOUS vocal monitor..."
+    @echo "💡 Monitoring will loop indefinitely - Press Ctrl+C to stop"
+    @echo ""
+    @echo "Note: Make sure ESP32 firmware is flashed first (just flash)"
+    @echo ""
+    uv run scripts/vad_monitor.py {{serial_port}} --continuous
+
+# Flash ESP32 and then monitor vocals (convenience command)
+flash-and-monitor: flash
+    @echo ""
+    @echo "✅ Firmware flashed! Starting vocal monitor in 2 seconds..."
+    @sleep 2
+    @just vad-monitor
+
+# Flash ESP32 and then monitor vocals continuously
+flash-and-monitor-continuous: flash
+    @echo ""
+    @echo "✅ Firmware flashed! Starting CONTINUOUS vocal monitor in 2 seconds..."
+    @sleep 2
+    @just vad-monitor-continuous

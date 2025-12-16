@@ -18,6 +18,8 @@ class Config:
     TOPIC_PIR = f"{TOPIC_PREFIX}/esp32/+/pir"
     TOPIC_ENV = f"{TOPIC_PREFIX}/esp32/+/env"
     TOPIC_NOISE_PROFILE = f"{TOPIC_PREFIX}/pi/aggregator/noise_profile"
+    TOPIC_VAD = f"{TOPIC_PREFIX}/pi/aggregator/vad"
+    TOPIC_VAD_EVENT = f"{TOPIC_PREFIX}/pi/aggregator/vad_event"
     TOPIC_ACTUATION_SPEAKER = f"{TOPIC_PREFIX}/pi/decision/actuation/speaker"
     TOPIC_ACTUATION_DISPLAY = f"{TOPIC_PREFIX}/pi/decision/actuation/display"
 

@@ -6,6 +6,8 @@ This project contains firmware and software for an IoT system that senses classr
 
 **NEW: WAV Audio Recording Over Serial** - The ESP32 can now record 10-second WAV files and stream them directly to your computer over USB. See the "WAV Recording" section below.
 
+**NEW: Real-time Voice Detection** - Silero VAD integration for live speech detection with visual CLI monitor. See the "Voice Activity Detection" section below.
+
 See `AGENTS.md` for complete project details.
 
 ## Directories
@@ -49,6 +51,60 @@ See `AGENTS.md` for complete project details.
 - **File Size**: ~320 KB
 
 The ESP32 continuously loops, sending a new recording every 12 seconds. The Python script automatically finds the WAV header in the stream and captures the audio data.
+
+## Voice Activity Detection (VAD)
+
+Real-time speech detection using Silero VAD, perfect for detecting when someone is talking in a classroom.
+
+### Quick Start
+
+1. **Install VAD dependencies:**
+   ```bash
+   just setup-vad  # Installs PyTorch + Silero VAD
+   ```
+
+2. **Test installation:**
+   ```bash
+   just test-vad
+   ```
+
+3. **Live vocal monitoring (CLI debugger):**
+   ```bash
+   # Single recording (10 seconds)
+   just vad-monitor
+   
+   # Continuous mode (loops indefinitely)
+   just vad-monitor-continuous
+   ```
+   
+   This displays **real-time visual alerts** when vocals are detected:
+   - 🔴 **Big alerts** when speech starts
+   - 🟢 Notification when speech ends
+   - **Progress bars** showing confidence during speech
+   - **Session summary** with statistics
+   - 🔄 **Continuous mode** keeps monitoring across multiple recordings
+   
+   Example output:
+   ```
+   🗣️  🗣️  🗣️  🗣️  🗣️  🗣️  🗣️  🗣️  🗣️  🗣️  
+   [12:34:56.789] 🔴 VOCALS DETECTED - SPEECH STARTED!
+   🗣️  🗣️  🗣️  🗣️  🗣️  🗣️  🗣️  🗣️  🗣️  🗣️  
+   
+   🔴 SPEECH [████████████████████░░░░░░░░░░░░░░░░] 65.3%
+   ```
+
+4. **MQTT mode (production):**
+   ```bash
+   just vad-live  # Publishes events to MQTT
+   ```
+
+### Features
+- ✅ **Privacy-first**: No raw audio transmitted, only metadata
+- ✅ **Low latency**: ~32ms detection delay
+- ✅ **Accurate**: Silero VAD model (state-of-the-art)
+- ✅ **Visual feedback**: CLI monitor for debugging
+
+See `pi-aggregator/VAD_README.md` for complete documentation.
 
 ## MQTT Mode (IoT System)
 

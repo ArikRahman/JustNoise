@@ -15,6 +15,12 @@ dependencies = [
     "pyserial",
 ]
 
+[project.optional-dependencies]
+vad = [
+    "torch>=2.0.0",
+    "torchaudio>=2.0.0",
+]
+
 [tool.uv]
 dev-dependencies = [
     "pytest",

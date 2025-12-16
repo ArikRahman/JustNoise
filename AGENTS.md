@@ -108,6 +108,66 @@ Reference: `esp32/firmware` contains a PlatformIO sketch with an example impleme
 
 Reference implementation: `pi-aggregator/aggregator.py`.
 
+## Silero VAD (Real-time Voice Activity Detection)
+
+- Purpose: add a lightweight, high-quality VAD to detect speech segments in real-time and emit compact speech/no-speech events (not raw audio). We recommend using the Silero VAD model from `snakers4/silero-vad` (PyTorch hub) to detect speech on the Pi/aggregator or on a transient edge host.
+
+- Where to run (options):
+  - On the Pi Aggregator (recommended): run VAD close to the audio ingress (serial WAV capture, USB microphone, or short PCM chunks from ESP32) and publish boolean/segment events to MQTT. Keeps raw audio local and minimizes downstream bandwidth and privacy exposure.
+  - On a dedicated edge worker (for CPU / thermal isolation): run VAD in a container on a nearby machine and publish events to the same MQTT topics.
+  - On-device (ESP32): not recommended for Silero (PyTorch dependency and compute cost). For microcontroller-only VAD, consider WebRTC VAD or simple energy-based heuristics.
+
+- Dependencies & install notes:
+  - Requires PyTorch and torchaudio (CPU builds are fine). Example (x86/arm):
+    - pip install torch torchaudio numpy
+    - Use torch.hub to load model: `torch.hub.load('snakers4/silero-vad', 'silero_vad', force_reload=False)`
+  - On Raspberry Pi, follow PyTorch's Pi-specific install instructions or use a prebuilt wheel for the target OS.
+
+- Real-time pipeline (high level):
+  1. Capture short PCM frames (e.g., 30-500 ms) at 16 kHz mono.
+  2. Buffer frames into overlapping windows and feed them into Silero utils (`get_speech_timestamps`, `VADIterator`) for smoothing and detection.
+  3. When a speech segment is detected, publish a compact event to MQTT (see topic/payload below).
+  4. Optionally emit boundary events (speech_start/speech_end) and aggregated speech activity percentages for the current profile window (used by `pi-decision`).
+
+- Example MQTT topics & payloads:
+  - `classroom/<room_id>/pi/aggregator/vad` — speech segment summary
+    ```json
+    {
+      "timestamp": "2025-12-16T12:00:00Z",
+      "device_id": "aggregator1",
+      "speech": true,
+      "start_ms": 1234,
+      "end_ms": 2345,
+      "confidence": 0.93,
+      "sample_rate": 16000,
+      "source": "silero_vad_v0"
+    }
+    ```
+  - `classroom/<room_id>/pi/aggregator/vad_event` — discrete start/end event
+    ```json
+    {"timestamp":"2025-12-16T12:00:00Z","device_id":"aggregator1","event":"speech_start","source":"silero_vad_v0"}
+    ```
+
+- Implementation tips & tuning:
+  - Use 16 kHz PCM input for best model compatibility (resample if necessary).
+  - Silero VAD requires exactly 512 samples per chunk for 16kHz (32ms), or 256 for 8kHz.
+  - Use `VADIterator` or custom hysteresis to reduce choppy toggles (silero utils provide smoothing helpers).
+  - Emit both per-window speech fraction (for `noise_profile`) and boundary events (for UI/actuation triggers).
+
+- Testing & Simulation:
+  - Reuse `scripts/publish_sample.py` to stream prerecorded speech/non-speech WAVs into the VAD pipeline for unit/integration tests.
+  - Add unit tests that validate VAD outputs against known sample timestamps and ensure MQTT message schemas (`shared/mqtt/schemas`) reflect vad events where applicable.
+
+- Privacy & Security:
+  - Do not publish or persist raw audio unless explicitly required and consented to; send only compact metadata (timestamps, speech flag, confidence).
+  - Run models locally (on-Pi) to avoid transmitting raw audio to cloud services.
+
+- Next steps / integration checklist:
+  - [x] Add lightweight VAD service in `pi-aggregator/` (e.g., `pi-aggregator/vad.py`) with configuration hooks.
+  - [ ] Add VAD-based fields to `pi/aggregator/noise_profile` (e.g., `speech_fraction`, `last_speech_ts`).
+  - [ ] Add unit/integration tests and a sample dataset for VAD (use `peaks/` or a new `test_data/` folder).
+  - [ ] Document dependency installation in `README.md` and/or `pyproject.toml` extras.
+
 ## Decision Node (Pi) responsibilities
 
 - Subscribe to noise profiles and any additional signals (PIR, env).

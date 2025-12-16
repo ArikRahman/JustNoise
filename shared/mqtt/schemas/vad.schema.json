@@ -1,0 +1,44 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "VAD Speech Segment",
+  "description": "Voice Activity Detection speech segment summary",
+  "type": "object",
+  "required": ["timestamp", "device_id", "speech", "confidence", "sample_rate", "source"],
+  "properties": {
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 timestamp"
+    },
+    "device_id": {
+      "type": "string",
+      "description": "Unique identifier for the aggregator device"
+    },
+    "speech": {
+      "type": "boolean",
+      "description": "Whether speech was detected in this segment"
+    },
+    "start_ms": {
+      "type": ["number", "null"],
+      "description": "Segment start time in milliseconds (relative to stream start)"
+    },
+    "end_ms": {
+      "type": ["number", "null"],
+      "description": "Segment end time in milliseconds (relative to stream start)"
+    },
+    "confidence": {
+      "type": "number",
+      "minimum": 0.0,
+      "maximum": 1.0,
+      "description": "VAD confidence score (0.0-1.0)"
+    },
+    "sample_rate": {
+      "type": "integer",
+      "description": "Audio sample rate in Hz"
+    },
+    "source": {
+      "type": "string",
+      "description": "VAD model identifier (e.g., silero_vad_v0)"
+    }
+  }
+}
