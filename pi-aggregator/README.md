@@ -2,7 +2,6 @@ Aggregator
 
 Run:
 
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-python aggregator.py
+```bash
+uv run aggregator.py
+```

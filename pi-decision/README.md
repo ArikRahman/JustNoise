@@ -2,9 +2,8 @@ Decision node
 
 Run:
 
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
+```bash
 # Train (example):
-# python train.py data/profiles.csv --out model.joblib
-python decision.py
+# uv run train.py data/profiles.csv --out model.joblib
+uv run decision.py
+```

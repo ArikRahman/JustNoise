@@ -1,4 +1,0 @@
-paho-mqtt
-numpy
-pandas
-python-dateutil

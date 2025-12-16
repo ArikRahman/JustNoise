@@ -14,10 +14,12 @@ Directories:
 
 Quick start (development):
 - ESP32: Use PlatformIO to build and flash `esp32/firmware`.
-- Pi components: Create a Python virtual environment and install requirements in `pi-aggregator/requirements.txt` and `pi-decision/requirements.txt`.
+- Python components: This project uses `uv` for dependency management.
+  1. Install uv: `curl -LsSf https://astral.sh/uv/install.sh | sh` (or via brew/pip).
+  2. Sync dependencies: `uv sync`.
 
 Local test (no hardware):
 - Run a local MQTT broker (mosquitto): `brew install mosquitto` then `mosquitto`.
-- In one terminal run the aggregator: `python3 pi-aggregator/aggregator.py`.
-- In another terminal run the decision node: `python3 pi-decision/decision.py`.
-- Use the included simulator to publish sample ESP32 messages: `python3 scripts/publish_sample.py`.
+- In one terminal run the aggregator: `uv run pi-aggregator/aggregator.py`.
+- In another terminal run the decision node: `uv run pi-decision/decision.py`.
+- Use the included simulator to publish sample ESP32 messages: `uv run scripts/publish_sample.py`.

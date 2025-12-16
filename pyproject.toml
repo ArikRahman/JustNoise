@@ -1,0 +1,21 @@
+[project]
+name = "justnoise"
+version = "0.1.0"
+description = "Classroom Occupancy and Noise Analytics"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "paho-mqtt",
+    "numpy",
+    "pandas",
+    "python-dateutil",
+    "python-dotenv",
+    "scikit-learn",
+    "joblib",
+]
+
+[tool.uv]
+dev-dependencies = [
+    "pytest",
+    "ruff",
+]
