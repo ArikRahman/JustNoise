@@ -9,11 +9,52 @@ default:
 # Serial port configuration (macOS CH340 adapter)
 serial_port := "/dev/tty.wchusbserial550D0193611"
 
-# Flash the WAV recorder firmware to ESP32
+# Flash the raw PCM streamer firmware to ESP32
 flash:
-    @echo "📦 Flashing ESP32 with WAV recorder firmware..."
+    @echo "📦 Flashing ESP32 with raw PCM streamer firmware..."
     cd arduino/mictest && pio run -t upload --upload-port {{serial_port}}
     @echo "✅ Firmware flashed successfully"
+
+# Stream raw PCM and run VAD (NEW - no WAV headers, pure continuous streaming)
+vad-stream:
+    @echo "🎤 Starting raw PCM streamer with VAD..."
+    @echo "💡 Speak near the microphone to see real-time detection!"
+    @echo ""
+    @echo "Note: Make sure ESP32 firmware is flashed first (just flash)"
+    @echo ""
+    uv run scripts/vad_stream.py {{serial_port}}
+
+# Capture raw PCM stream to audio files (time-based splitting)
+capture-pcm:
+    @echo "🎙️  Capturing raw PCM to audio files..."
+    @echo "💡 Each file is 60 seconds (Press Ctrl+C to stop)"
+    @echo ""
+    @echo "Note: Make sure ESP32 firmware is flashed first (just flash)"
+    @echo ""
+    uv run scripts/capture_pcm.py {{serial_port}}
+
+# Capture PCM with custom duration per file
+capture-pcm-duration duration="300":
+    @echo "🎙️  Capturing raw PCM to audio files ({{duration}}s each)..."
+    @echo "💡 Press Ctrl+C to stop"
+    @echo ""
+    uv run scripts/capture_pcm.py {{serial_port}} --duration {{duration}}
+
+# Capture PCM with VAD-based file splitting (on speech boundaries)
+capture-pcm-vad:
+    @echo "🎤 Capturing PCM with VAD-based splitting..."
+    @echo "💡 Files are split on speech boundaries (Press Ctrl+C to stop)"
+    @echo ""
+    @echo "Note: Requires VAD support - run 'just setup-vad' first"
+    @echo ""
+    uv run scripts/capture_pcm.py {{serial_port}} --mode vad
+
+# Capture PCM with size-based file splitting
+capture-pcm-size:
+    @echo "🎙️  Capturing PCM with size-based splitting..."
+    @echo "💡 Files split at 1 MB each (Press Ctrl+C to stop)"
+    @echo ""
+    uv run scripts/capture_pcm.py {{serial_port}} --mode size
 
 # Record audio to a file (auto-generates timestamped filename)
 record output="recording.wav":
@@ -131,6 +172,13 @@ vad-monitor-continuous:
     @echo "Note: Make sure ESP32 firmware is flashed first (just flash)"
     @echo ""
     uv run scripts/vad_monitor.py {{serial_port}} --continuous
+
+# Flash ESP32 and stream raw PCM (convenience command)
+flash-and-stream: flash
+    @echo ""
+    @echo "✅ Firmware flashed! Starting raw PCM stream with VAD in 2 seconds..."
+    @sleep 2
+    @just vad-stream
 
 # Flash ESP32 and then monitor vocals (convenience command)
 flash-and-monitor: flash

@@ -9,3 +9,4 @@ build/
 *.elf
 peaks/
 recording_*.wav
+.DS_Store

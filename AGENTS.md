@@ -158,6 +158,7 @@ Reference implementation: `pi-aggregator/aggregator.py`.
 - Testing & Simulation:
   - Reuse `scripts/publish_sample.py` to stream prerecorded speech/non-speech WAVs into the VAD pipeline for unit/integration tests.
   - Add unit tests that validate VAD outputs against known sample timestamps and ensure MQTT message schemas (`shared/mqtt/schemas`) reflect vad events where applicable.
+  - **CLI Monitor**: Use `just vad-monitor-continuous` for live testing. In continuous mode, VAD loops across multiple 10-second recordings. Optional recording separators can be enabled by uncommenting lines in `scripts/vad_monitor.py` (see `_process_continuous()` method) to track when each new session starts—useful for debugging but disabled by default to keep output clean.
 
 - Privacy & Security:
   - Do not publish or persist raw audio unless explicitly required and consented to; send only compact metadata (timestamps, speech flag, confidence).

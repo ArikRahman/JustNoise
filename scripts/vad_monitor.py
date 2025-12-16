@@ -141,10 +141,12 @@ class VADMonitor:
         while True:
             self.recording_count += 1
             
-            if self.recording_count > 1:
-                print(f"\n{'─' * 70}")
-                print(f"▶️  Recording #{self.recording_count}")
-                print(f"{'─' * 70}\n")
+            # Optional: uncomment below to show recording separators between sessions
+            # Useful for debugging/tracking when each new 10s recording starts
+            # if self.recording_count > 1:
+            #     print(f"\n{'─' * 70}")
+            #     print(f"▶️  Recording #{self.recording_count}")
+            #     print(f"{'─' * 70}\n")
             
             # Send trigger
             time.sleep(0.5)
