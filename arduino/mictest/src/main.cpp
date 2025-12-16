@@ -12,6 +12,17 @@
 #define NUM_CHANNELS 1
 
 // Function declarations
+void sendWAVHeader(uint32_t dataSize);
+
+// Globals for timer interrupt
+volatile bool sampleReady = false;
+volatile int16_t currentSample = 0;
+hw_timer_t* timer = NULL;
+
+void IRAM_ATTR onTimer() {
+  // Read ADC in interrupt
+  sampleReady = true;
+}
 
 void sendWAVHeader(uint32_t dataSize) {
   // Build WAV header manually byte by byte to ensure correctness
@@ -98,10 +109,16 @@ void setup() {
   // Initialize ADC for microphone
   analogReadResolution(12);  // 12-bit ADC (0-4095)
   pinMode(MIC_PIN, INPUT);
+  analogSetAttenuation(ADC_11db);  // Full range 0-3.3V
   
-  // Calibrate DC offset by averaging several samples
-  // The MAX4466 outputs around VCC/2 (1.65V on 3.3V = ~2048 on 12-bit ADC)
-  // We need to measure this to remove the DC bias
+  // Setup hardware timer for precise 16 kHz sampling
+  // Timer 0, prescaler 80 (1 MHz), count up
+  timer = timerBegin(0, 80, true);
+  timerAttachInterrupt(timer, &onTimer, true);
+  
+  // Set alarm to trigger every 1/16000 seconds = 62.5 microseconds
+  timerAlarmWrite(timer, 62, true);  // 62 µs = 16.129 kHz (close enough)
+  timerAlarmEnable(timer);
 }
 
 void loop() {
@@ -110,6 +127,9 @@ void loop() {
   uint32_t dataSize = totalSamples * 2;
   
   // Measure DC offset (average value when quiet)
+  // Disable timer during calibration
+  timerAlarmDisable(timer);
+  
   uint32_t dcOffsetSum = 0;
   const int calibrationSamples = 1000;
   for (int i = 0; i < calibrationSamples; i++) {
@@ -121,11 +141,17 @@ void loop() {
   // Send WAV header
   sendWAVHeader(dataSize);
   
-  // Record and send real audio samples from microphone
-  unsigned long sampleDelay = 1000000 / SAMPLE_RATE;  // microseconds between samples
+  // Re-enable timer for recording
+  timerAlarmEnable(timer);
+  sampleReady = false;
   
+  // Record and send real audio samples from microphone
   for (uint32_t i = 0; i < totalSamples; i++) {
-    unsigned long sampleStart = micros();
+    // Wait for timer interrupt to signal sample ready
+    while (!sampleReady) {
+      // Wait for interrupt
+    }
+    sampleReady = false;
     
     // Read ADC value from microphone (12-bit: 0-4095)
     int16_t adcValue = analogRead(MIC_PIN);
@@ -143,14 +169,12 @@ void loop() {
     if (i % 1600 == 0) {  // Every 0.1 seconds at 16kHz
       Serial.flush();
     }
-    
-    // Maintain precise sample rate timing
-    while ((micros() - sampleStart) < sampleDelay) {
-      // Busy wait to maintain timing
-    }
   }
   
   Serial.flush();
+  
+  // Disable timer between recordings
+  timerAlarmDisable(timer);
   
   // Wait before next recording
   delay(2000);
