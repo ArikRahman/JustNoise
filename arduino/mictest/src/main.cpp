@@ -192,7 +192,8 @@ void loop() {
     // Convert stereo to mono and send
     for (size_t i = 0; i < samplesRead && samplesRecorded < totalSamples; i++) {
       // Extract right channel (SEL=HIGH) from second 32-bit word
-      int16_t sample16 = (int16_t)(i2sBuffer[i * 2 + 1] >> 16);
+      // Using >> 14 for 4x gain boost (was >> 16)
+      int16_t sample16 = (int16_t)(i2sBuffer[i * 2 + 1] >> 12);
       Serial.write((uint8_t*)&sample16, 2);
       samplesRecorded++;
     }

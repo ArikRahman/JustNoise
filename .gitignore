@@ -7,3 +7,5 @@ build/
 .pio/
 *.bin
 *.elf
+peaks/
+recording_*.wav
