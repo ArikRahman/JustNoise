@@ -162,17 +162,18 @@ Quick start (developer):
 ### Objective
 Stream 16-bit mono PCM audio recorded on the ESP32 to a computer via USB serial connection as a binary WAV file, bypassing MQTT for direct offline recording.
 
-### Implementation Status: **WORKING (streaming OK, sample-rate/pitch issue being debugged)**
+### Implementation Status: **WORKING (I2S MEMS Mic Configured)**
 
 **ESP32 Firmware (`arduino/mictest/src/main.cpp`):**
-- Streams binary WAV file over serial at 115200 baud
+- Streams binary WAV file over serial at **921600 baud** (increased from 115200 to prevent buffer overflows)
+- Uses I2S peripheral for high-quality audio capture from Fermion I2S MEMS Mic
 - WAV header (44 bytes) sent first, followed by audio samples (2 bytes each, 16-bit little-endian)
 - Recording duration: 10 seconds (configurable via `RECORDING_TIME_SEC`)
-- Total file size: ~320 KB per recording
-- Continuously loops: sends new recording every 12 seconds (10s record + 2s pause)
+- **Trigger Mechanism**: Waits for serial byte 'G' before starting recording to ensure sync
 
 **Python Capture Script (`scripts/capture_wav.py`):**
-- Opens serial port at 115200 baud
+- Opens serial port at **921600 baud**
+- Sends trigger byte 'G' to start recording
 - Searches incoming stream for RIFF signature (0x52494646)
 - Reads complete 44-byte WAV header
 - Extracts audio data size from header
@@ -180,45 +181,29 @@ Stream 16-bit mono PCM audio recorded on the ESP32 to a computer via USB serial 
 - Validates WAV format before writing
 - Output: Valid 16kHz 16-bit mono PCM WAV file
 
-**Current Status: WORKING (binary streaming/capture functional; recorded audio shows octave-up pitch / sample-rate mismatch)**
-- Firmware compiles and uploads successfully (recent builds ~280 KB binary)
-- Serial communication verified and stable
-- WAV header correctly constructed with byte-by-byte manual assembly
-- RIFF signature reliably detected in stream
-- Complete 10-second recordings successfully captured (test files: `recording_timer.wav`, `recording_exact16k.wav`, `recording_31ticks.wav`)
-- Recorded audio is intelligible, but currently pitched an octave high (indicative of recording at ~8 kHz while header claims 16 kHz)
+**Current Status: WORKING (I2S Audio Capture + Serial Streaming)**
+- **Hardware**: Fermion I2S MEMS Microphone (SCK=25, WS=16, SD=26, SEL=2)
+- **Configuration**: Stereo Mode (Right+Left), extracting Right channel (SEL=HIGH)
+- **Gain**: 16x digital gain applied (bit shift `>> 12`)
+- **Fixes Applied**:
+  - **Silent Audio**: Fixed by using `I2S_CHANNEL_FMT_RIGHT_LEFT` (Stereo) instead of `ONLY_RIGHT`.
+  - **Repetition/Stutter**: Fixed by flushing I2S DMA buffers (`i2s_zero_dma_buffer`) before recording.
+  - **"Fast" Playback**: Identified as Serial bandwidth bottleneck (32kB/s audio > 11.5kB/s serial). **Fix: Increasing baud rate to 921600.**
 
-**Key Challenges, Current Findings & Plan:**
+**Key Challenges & Solutions:**
 
-1. **Binary vs. Text Mixing**: Early attempts mixed Serial.println() debug output with binary data, corrupting the stream.
-  - ✓ **Solution**: Removed all text output; now sends pure binary header + samples.
+1. **Silent Audio with I2S Mic**:
+   - **Issue**: `I2S_CHANNEL_FMT_ONLY_RIGHT` produced all zeros.
+   - **Solution**: Switched to `I2S_CHANNEL_FMT_RIGHT_LEFT` (Stereo) and manually extracted the right channel sample from the interleaved buffer.
 
-2. **Header Initialization**: C++ struct initialization with member initializers was unreliable for binary transmission.
-  - ✓ **Solution**: Manually build WAV header byte-by-byte with explicit bit-shifting for endianness.
+2. **"Test Test Test" Repetition**:
+   - **Issue**: Old data in the DMA buffer was being read at the start of a new recording.
+   - **Solution**: Added `i2s_zero_dma_buffer(I2S_PORT)` and a dummy read loop to flush the pipeline before starting capture.
 
-3. **Serial Synchronization**: Python capture script would timeout waiting for RIFF header because ESP32's loop() already sent data before script connected.
-  - ✓ **Solution**: Script now continuously reads and searches for RIFF in buffer; no reset required.
-
-4. **Serial Port Reset**: DTR/RTS control didn't work reliably on macOS with CH340 adapters.
-  - ✓ **Solution**: Removed reset dependency; script polls for data and finds RIFF dynamically.
-
-5. **Sample Rate Timing (previous)**: Initial implementation used delay() which was imprecise.
-  - ✓ **Solution**: Implemented prior hardware-timed approach (micros() and busy-wait) and then moved to timer-alarm based sampling.
-
-6. **Sample Rate / Pitch Mismatch (ONGOING)**: After switching to a hardware-timer-based sampling implementation the recordings are intelligible but still pitched an octave up (recorded sample rate appears to be roughly half of the declared 16 kHz).
-  - **Observations so far**:
-    - Replaced busy-wait with hardware timer (timerBegin + timerAlarmWrite) and tested multiple prescalers/tick values (2 MHz/125 ticks, 1 MHz/31 ticks, etc.).
-    - Produced test recordings (`recording_timer.wav`, `recording_exact16k.wav`, `recording_31ticks.wav`) that consistently show octave-up pitch.
-  - **Likely causes under investigation**:
-    - Missed timer ticks: ISR currently sets a boolean flag; if the main loop's ADC read/Serial write can't keep up, multiple timer alarms may occur and samples are effectively skipped.
-    - ADC read latency: `analogRead()` may be too slow to run in the main loop at 16 kHz, causing effective sample rate to drop.
-    - Timer configuration semantics or interaction with other code paths causing effective period doubling.
-  - **Immediate diagnostic / mitigation plan**:
-    1. Add an instrumented "diagnostic mode" build that emits sampling telemetry (sample counts, measured elapsed micros between the first and last sample, missed-tick counters) as ASCII (no binary WAV) so we can reliably measure effective sample rate without having to parse binary.
-    2. Replace the ISR flag (bool) with a counter (volatile uint32_t tickCount) to detect missed ticks; log tickCount after recording in diagnostic mode.
-    3. If tick misses are observed, move ADC sample capture into the ISR (using the fastest ADC read path safe in ISR) or switch to the ESP32 I2S / ADC DMA capture mode to avoid software scheduling bottlenecks.
-    4. Add a GPIO toggle test (pin toggle in ISR) so a scope or logic analyzer can confirm ISR frequency and compare to expected timer frequency.
-  - **Acceptance criteria**: Recorded vocal audio plays at normal pitch (no octave shift), and measured sample count matches SAMPLE_RATE * RECORDING_TIME_SEC within a 1% tolerance.
+3. **"Fast" Audio (Time Compression)**:
+   - **Issue**: Audio played at correct pitch but sounded "rushed" or "fast".
+   - **Cause**: Serial baud rate (115200) was too slow for 16kHz 16-bit audio (32kB/s). The blocking `Serial.write` caused the I2S buffer to overflow, dropping chunks of time.
+   - **Solution**: Increase Serial baud rate to **921600** (approx 92kB/s capacity).
 
 **Usage:**
 
@@ -233,11 +218,6 @@ Stream 16-bit mono PCM audio recorded on the ESP32 to a computer via USB serial 
    uv run scripts/capture_wav.py /dev/tty.wchusbserial550D0193611 recording.wav
    ```
 
-3. **Verify WAV File:**
-   ```bash
-   file recording.wav
-   # Output: RIFF (little-endian) data, WAVE audio, Microsoft PCM, 16 bit, mono 16000 Hz
-   ```
 
 **Output Specifications:**
 - **Format**: WAV (RIFF), Microsoft PCM

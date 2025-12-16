@@ -19,8 +19,9 @@ def capture_wav(port, output_file, timeout=30):
         import time
         
         # Open serial connection
-        ser = serial.Serial(port, baudrate=115200, timeout=5)
-        print(f"Connected to {port} at 115200 baud")
+        # 921600 baud required for 16kHz 16-bit audio (32kB/s)
+        ser = serial.Serial(port, baudrate=921600, timeout=5)
+        print(f"Connected to {port} at 921600 baud")
         
         # Send trigger byte to ESP32 to start recording
         time.sleep(0.5)  # Wait for ESP32 to be ready

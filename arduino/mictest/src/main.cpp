@@ -42,7 +42,7 @@ void i2s_install() {
     .mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_RX),
     .sample_rate = SAMPLE_RATE,
     .bits_per_sample = I2S_BITS_PER_SAMPLE_32BIT,
-    .channel_format = I2S_CHANNEL_FMT_RIGHT_LEFT,  // Read both channels
+    .channel_format = I2S_CHANNEL_FMT_RIGHT_LEFT,  // Revert to Stereo (Right+Left)
     .communication_format = I2S_COMM_FORMAT_STAND_I2S,
     .intr_alloc_flags = ESP_INTR_FLAG_LEVEL1,
     .dma_buf_count = DMA_BUF_COUNT,
@@ -145,7 +145,9 @@ void sendWAVHeader(uint32_t dataSize) {
 }
 
 void setup() {
-  Serial.begin(115200);
+  // Initialize Serial for data streaming
+  // 921600 baud required for 16kHz 16-bit audio (32kB/s)
+  Serial.begin(921600);
   while (!Serial) {
     delay(10);
   }
@@ -172,6 +174,16 @@ void loop() {
     Serial.read();
   }
   
+  // CRITICAL: Clear I2S DMA buffers to avoid stale data
+  i2s_zero_dma_buffer(I2S_PORT);
+  
+  // Discard first batch of samples (warm-up period)
+  int32_t dummyBuffer[SAMPLE_BUFFER_SIZE];
+  size_t dummyBytesRead;
+  for (int i = 0; i < 3; i++) {  // Discard 3 buffers worth
+    i2s_read(I2S_PORT, dummyBuffer, sizeof(dummyBuffer), &dummyBytesRead, portMAX_DELAY);
+  }
+  
   uint32_t totalSamples = RECORDING_TIME_SEC * SAMPLE_RATE;
   uint32_t dataSize = totalSamples * 2;
   
@@ -192,7 +204,7 @@ void loop() {
     // Convert stereo to mono and send
     for (size_t i = 0; i < samplesRead && samplesRecorded < totalSamples; i++) {
       // Extract right channel (SEL=HIGH) from second 32-bit word
-      // Using >> 14 for 4x gain boost (was >> 16)
+      // Using >> 12 for 16x gain boost
       int16_t sample16 = (int16_t)(i2sBuffer[i * 2 + 1] >> 12);
       Serial.write((uint8_t*)&sample16, 2);
       samplesRecorded++;
