@@ -22,9 +22,12 @@ def capture_wav(port, output_file, timeout=30):
         ser = serial.Serial(port, baudrate=115200, timeout=5)
         print(f"Connected to {port} at 115200 baud")
         
-        # Don't reset - just wait for data to arrive
-        # The ESP32 is continuously sending, so we'll catch it
-        print("Waiting for data stream...")
+        # Send trigger byte to ESP32 to start recording
+        time.sleep(0.5)  # Wait for ESP32 to be ready
+        ser.write(b'G')  # Send 'G' for "Go"
+        ser.flush()
+        print("Sent trigger to ESP32...")
+        time.sleep(0.1)
         
         # Look for binary RIFF header (0x52 0x49 0x46 0x46)
         print("Searching for WAV header...")
