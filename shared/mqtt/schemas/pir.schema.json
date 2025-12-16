@@ -1,0 +1,11 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "PIR",
+  "type": "object",
+  "required": ["timestamp","device_id","motion"],
+  "properties": {
+    "timestamp": {"type":"string","format":"date-time"},
+    "device_id": {"type":"string"},
+    "motion": {"type":"boolean"}
+  }
+}

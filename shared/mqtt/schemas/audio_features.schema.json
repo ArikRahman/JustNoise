@@ -1,0 +1,14 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "AudioFeatures",
+  "type": "object",
+  "required": ["timestamp","device_id","sample_window_ms","rms_db","peak_db"],
+  "properties": {
+    "timestamp": {"type":"string","format":"date-time"},
+    "device_id": {"type":"string"},
+    "sample_window_ms": {"type":"integer"},
+    "rms_db": {"type":"number"},
+    "peak_db": {"type":"number"},
+    "band_energies": {"type":"array","items":{"type":"number"}}
+  }
+}

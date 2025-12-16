@@ -1,0 +1,9 @@
+venv/
+.env
+build/
+*.pyc
+.idea/
+.vscode/
+.pio/
+*.bin
+*.elf
