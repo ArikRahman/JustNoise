@@ -5,6 +5,7 @@
 
 #include <Arduino.h>
 
+#define MIC_PIN 35                // ADC pin for MAX4466 microphone
 #define RECORDING_TIME_SEC 10
 #define SAMPLE_RATE 16000
 #define BIT_DEPTH 16
@@ -93,6 +94,10 @@ void sendWAVHeader(uint32_t dataSize) {
 void setup() {
   Serial.begin(115200);
   delay(500);
+  
+  // Initialize ADC for microphone
+  analogReadResolution(12);  // 12-bit ADC (0-4095)
+  pinMode(MIC_PIN, INPUT);
 }
 
 void loop() {
@@ -103,21 +108,36 @@ void loop() {
   // Send WAV header
   sendWAVHeader(dataSize);
   
-  // Send dummy samples for 10 seconds
+  // Record and send real audio samples from microphone
   unsigned long startTime = millis();
-  unsigned long elapsedTime = 0;
+  unsigned long sampleDelay = 1000000 / SAMPLE_RATE;  // microseconds between samples
   
-  while (elapsedTime < (RECORDING_TIME_SEC * 1000)) {
-    for (int i = 0; i < 100; i++) {
-      uint16_t sample = 1024 + (rand() % 512);
-      Serial.write((uint8_t*)&sample, 2);
+  for (uint32_t i = 0; i < totalSamples; i++) {
+    unsigned long sampleStart = micros();
+    
+    // Read ADC value from microphone (12-bit: 0-4095)
+    uint16_t adcValue = analogRead(MIC_PIN);
+    
+    // Convert 12-bit ADC to 16-bit sample (scale up)
+    uint16_t sample16 = adcValue << 4;  // Shift left by 4 bits (12-bit -> 16-bit)
+    
+    // Send sample as little-endian 16-bit
+    Serial.write((uint8_t*)&sample16, 2);
+    
+    // Flush periodically to avoid buffer overflow
+    if (i % 1600 == 0) {  // Every 0.1 seconds at 16kHz
+      Serial.flush();
     }
-    Serial.flush();
-    delay(1);
-    elapsedTime = millis() - startTime;
+    
+    // Maintain precise sample rate timing
+    while ((micros() - sampleStart) < sampleDelay) {
+      // Busy wait to maintain timing
+    }
   }
   
-  // Wait a moment, then loop again (send another recording)
+  Serial.flush();
+  
+  // Wait before next recording
   delay(2000);
 }
 

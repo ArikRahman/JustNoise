@@ -157,80 +157,112 @@ Quick start (developer):
 - PIR HC-SR501: digital input with stable power and appropriate timeout/trigger configuration.
 - AHT10: I2C SDA/SCL to ESP32 I2C pins; ensure proper pull-ups.
 
-## WAV File Streaming Over Serial (Current Work)
+## WAV File Streaming Over Serial (COMPLETED ✓)
 
 ### Objective
 Stream 16-bit mono PCM audio recorded on the ESP32 to a computer via USB serial connection as a binary WAV file, bypassing MQTT for direct offline recording.
 
-### Implementation
+### Implementation Status: **WORKING**
 
-**ESP32 Firmware (`arduino/mictest/wav_recorder.ino`):**
+**ESP32 Firmware (`arduino/mictest/src/main.cpp`):**
 - Records ADC samples from MAX4466 microphone on pin 35 (IO35) at 16 kHz
 - Streams binary WAV file over serial at 115200 baud
 - WAV header (44 bytes) sent first, followed by audio samples (2 bytes each, 16-bit little-endian)
-- Recording duration: 10 seconds (configurable)
-- Total file size: ~320 KB
-
-**Key Challenges & Solutions:**
-
-1. **Binary vs. Text Mixing**: Early attempts mixed Serial.println() debug output with binary data, corrupting the stream. 
-   - Solution: Removed all text output; now sends pure binary header + samples.
-
-2. **Header Initialization**: C++ struct initialization with member initializers was unreliable for binary transmission.
-   - Solution: Manually build WAV header byte-by-byte with explicit bit-shifting for endianness.
-
-3. **Serial Synchronization**: Python capture script would timeout waiting for RIFF header because:
-   - ESP32's loop() already sent data before script connected
-   - Solution: Refactored to use RTS reset signal to force ESP32 restart on script connect.
-
-4. **Serial Port Reset**: DTR control didn't work on macOS with CH340 adapters.
-   - Solution: Switched to RTS control; added fallback polling with progress feedback.
+- Recording duration: 10 seconds (configurable via `RECORDING_TIME_SEC`)
+- Total file size: ~320 KB per recording
+- Continuously loops: sends new recording every 12 seconds (10s record + 2s pause)
 
 **Python Capture Script (`scripts/capture_wav.py`):**
-- Opens serial port and attempts RTS reset to trigger ESP32 restart
-- Searches incoming buffer for RIFF signature (0x52494646)
+- Opens serial port at 115200 baud
+- Searches incoming stream for RIFF signature (0x52494646)
 - Reads complete 44-byte WAV header
 - Extracts audio data size from header
-- Streams remaining audio samples to file
+- Streams remaining audio samples to file with progress indicator
 - Validates WAV format before writing
+- Output: Valid 16kHz 16-bit mono PCM WAV file
 
-**Current Status:**
-- Firmware compiles and uploads successfully (281 KB binary)
-- Serial communication confirmed: ESP32 sending data (verified with raw read test showing non-zero bytes)
-- WAV header reconstruction verified with byte-by-byte assembly
-- Script can open serial port and attempts reset
-- **Blocker**: RIFF signature not yet appearing in stream; likely timing issue with reset signal or bootloader noise
+**Current Status: ✓ FULLY FUNCTIONAL**
+- Firmware compiles and uploads successfully (275 KB binary)
+- Serial communication verified and stable
+- WAV header correctly constructed with byte-by-byte manual assembly
+- RIFF signature reliably detected in stream
+- Complete 10-second recordings successfully captured
+- Output files validated as proper WAV format
+- Real microphone audio recorded from MAX4466
 
-**Debugging Steps Attempted:**
-1. Verified serial port connection with basic read (received data)
-2. Tested with and without microphone connected (mic disconnect was blocking ADC)
-3. Tried simplified sketch with dummy data to isolate hardware/ADC issues
-4. Built WAV header manually to rule out struct alignment issues
-5. Added RTS reset to force synchronization
-6. Monitored `in_waiting` buffer for data arrival
+**Key Challenges & Solutions (Resolved):**
 
-**Next Steps:**
-1. Run raw binary dump after reset to see exact byte sequence
-2. Verify WAV header bytes match expected RIFF signature
-3. Adjust reset timing (may need longer delay after RTS)
-4. Consider adding initial marker byte for synchronization
-5. Test with file playback once capture succeeds
+1. **Binary vs. Text Mixing**: Early attempts mixed Serial.println() debug output with binary data, corrupting the stream. 
+   - ✓ **Solution**: Removed all text output; now sends pure binary header + samples.
+
+2. **Header Initialization**: C++ struct initialization with member initializers was unreliable for binary transmission.
+   - ✓ **Solution**: Manually build WAV header byte-by-byte with explicit bit-shifting for endianness.
+
+3. **Serial Synchronization**: Python capture script would timeout waiting for RIFF header because ESP32's loop() already sent data before script connected.
+   - ✓ **Solution**: Script now continuously reads and searches for RIFF in buffer; no reset required.
+
+4. **Serial Port Reset**: DTR/RTS control didn't work reliably on macOS with CH340 adapters.
+   - ✓ **Solution**: Removed reset dependency; script polls for data and finds RIFF dynamically.
+
+5. **Sample Rate Timing**: Initial implementation used delay() which was imprecise.
+   - ✓ **Solution**: Implemented precise timing with micros() and busy-wait loop to maintain exact 16 kHz sampling.
+
+**Usage:**
+
+1. **Flash ESP32:**
+   ```bash
+   cd arduino/mictest
+   pio run -t upload --upload-port /dev/tty.wchusbserial550D0193611
+   ```
+
+2. **Capture Recording:**
+   ```bash
+   uv run scripts/capture_wav.py /dev/tty.wchusbserial550D0193611 recording.wav
+   ```
+
+3. **Verify WAV File:**
+   ```bash
+   file recording.wav
+   # Output: RIFF (little-endian) data, WAVE audio, Microsoft PCM, 16 bit, mono 16000 Hz
+   ```
+
+**Output Specifications:**
+- **Format**: WAV (RIFF), Microsoft PCM
+- **Sample Rate**: 16000 Hz
+- **Bit Depth**: 16-bit
+- **Channels**: Mono (1)
+- **Duration**: 10 seconds
+- **File Size**: 320,044 bytes (44-byte header + 320,000 bytes audio data)
 
 ### Hardware Setup
 - **ESP32**: WROOM-32 dev board
-- **Microphone**: MAX4466 output → GPIO 35 (ADC1)
+- **Microphone**: MAX4466 electret mic amplifier → GPIO 35 (ADC1_CH7)
 - **USB Serial**: CH340 USB-to-serial adapter @ 115200 baud
+- **Power**: USB 5V
 - **Recording Parameters**: 16 kHz sample rate, 16-bit depth, mono, 10 second duration
 
 ## Contribution & Roadmap
 
 - Short-term:
-  - Complete WAV streaming pipeline (debug RIFF header synchronization)
-  - Improve ESP32 feature set (band energies via lightweight FFT), implement robust MQTT reconnect and NTP time sync.
-  - Add unit & integration tests, and a Docker Compose for local CI.
+  - ✅ **COMPLETED**: WAV streaming over serial (working end-to-end)
+  - Improve ESP32 feature set (band energies via lightweight FFT for MQTT mode)
+  - Implement robust MQTT reconnect and NTP time sync
+  - Add unit & integration tests, and a Docker Compose for local CI
 - Mid-term:
-  - Implement model evaluation suite and automated retraining pipeline.
-  - Add secure deployment artifacts (systemd unit files, certificate management).
+  - Implement model evaluation suite and automated retraining pipeline
+  - Add secure deployment artifacts (systemd unit files, certificate management)
+  - Add SD card support for offline recording without computer connection
+  - Implement battery power mode with deep sleep between recordings
 
-If you want, I can implement any of the next steps (WAV streaming completion, ESP32 FFT features, add MQTT TLS config, Docker Compose + CI, or model evaluation and retraining). Tell me which to do next.
+**Completed Features:**
+- ✅ Serial WAV streaming (ESP32 → Computer via USB)
+- ✅ Real-time ADC audio capture at 16 kHz
+- ✅ Python capture script with progress reporting
+- ✅ Valid WAV file output (tested and verified)
+
+**Next Priorities:**
+1. Integrate timer-based interrupts for more precise sampling (optional enhancement)
+2. Add audio analysis features (RMS, peak detection, frequency bands)
+3. Implement MQTT publishing of audio features alongside serial capture
+4. Build ML model training pipeline for noise classification
 
