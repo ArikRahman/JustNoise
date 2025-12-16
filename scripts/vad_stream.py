@@ -8,8 +8,11 @@ and feeds them into Silero VAD for real-time speech detection.
 Usage:
   python vad_stream.py /dev/tty.wchusbserial550D0193611
   python vad_stream.py /dev/tty.wchusbserial550D0193611 --baudrate 921600
+  python vad_stream.py /dev/tty.wchusbserial550D0193611 --min-silence 1500 --min-speech 300
 
   or use: just vad-stream
+           just vad-stream-aggressive
+           just vad-stream-custom min_silence=1500 min_speech=300
 """
 
 import argparse
@@ -38,10 +41,16 @@ except ImportError:
 class PCMVADMonitor:
     """Real-time VAD monitor for raw PCM stream."""
 
-    def __init__(self, serial_port, baudrate=921600):
+    def __init__(
+        self, serial_port, baudrate=921600, min_silence_ms=500, min_speech_ms=0
+    ):
         self.serial_port = serial_port
         self.baudrate = baudrate
-        self.vad = SileroVAD(sample_rate=16000, device="cpu")
+        self.min_silence_ms = min_silence_ms
+        self.min_speech_ms = min_speech_ms
+        self.vad = SileroVAD(
+            sample_rate=16000, device="cpu", min_silence_duration_ms=min_silence_ms
+        )
 
         # Stats
         self.total_chunks = 0
@@ -59,11 +68,17 @@ class PCMVADMonitor:
         print("=" * 70)
         print("🎤 RAW PCM VOICE ACTIVITY MONITOR")
         print("=" * 70)
-        print(f"Serial Port: {self.serial_port}")
-        print(f"Baudrate:    {self.baudrate}")
-        print(f"Sample Rate: 16000 Hz")
-        print(f"Chunk Size:  512 samples (32ms)")
-        print(f"Mode:        🔄 CONTINUOUS (Press Ctrl+C to stop)")
+        print(f"Serial Port:      {self.serial_port}")
+        print(f"Baudrate:         {self.baudrate}")
+        print(f"Sample Rate:      16000 Hz")
+        print(f"Chunk Size:       512 samples (32ms)")
+        print(f"Mode:             🔄 CONTINUOUS (Press Ctrl+C to stop)")
+        print(
+            f"Min Silence:      {self.min_silence_ms}ms (grace period before ending speech)"
+        )
+        print(
+            f"Min Speech:       {self.min_speech_ms}ms (minimum duration to accept speech)"
+        )
         print("=" * 70)
         print("\n⏳ Waiting for ESP32 raw PCM stream...\n")
 
@@ -131,6 +146,14 @@ class PCMVADMonitor:
         pcm_buffer = b""
         frame_samples = 512  # Required by Silero VAD (32ms at 16kHz)
         frame_bytes = frame_samples * 2  # 16-bit = 2 bytes per sample
+        frame_duration_ms = 32  # 512 samples at 16kHz = 32ms
+
+        # Hysteresis tracking (grace period for brief silences)
+        potential_speech_start = None
+        silence_counter = 0
+        silence_threshold = (
+            self.min_silence_ms / frame_duration_ms
+        )  # How many silent frames before ending
 
         # Process streaming data
         while True:
@@ -158,32 +181,43 @@ class PCMVADMonitor:
                     confidence = result.get("confidence", 0.0)
                     is_speech = result["speech"]
 
-                    # Detect state changes
-                    if is_speech and not self.last_state:
-                        # Speech started!
-                        self.current_speech_start = datetime.now()
-                        self.print_alert("", "speech_start")
-                        self.last_state = True
-                        self.speech_chunks += 1
+                    # Hysteresis logic with grace period
+                    if is_speech:
+                        # Reset silence counter when speech detected
+                        silence_counter = 0
 
-                    elif not is_speech and self.last_state:
-                        # Speech ended
-                        self.print_alert("", "speech_end")
-                        segment_duration = (
-                            datetime.now() - self.current_speech_start
-                        ).total_seconds()
-                        self.speech_segments.append(segment_duration)
-                        self.current_speech_start = None
-                        self.last_state = False
-                        print()  # New line after progress bar
+                        # Detect speech start
+                        if not self.last_state:
+                            # Speech started!
+                            self.current_speech_start = datetime.now()
+                            self.print_alert("", "speech_start")
+                            self.last_state = True
+                            self.speech_chunks += 1
 
-                    elif is_speech:
                         # Continuing speech
                         self.speech_chunks += 1
 
-                    # Update progress bar (only when speech detected)
-                    if is_speech:
+                        # Update progress bar
                         self.print_progress_bar(confidence, is_speech)
+
+                    else:
+                        # Silence detected
+                        if self.last_state:
+                            # We're in speech but got a silent frame
+                            # Increment silence counter (grace period)
+                            silence_counter += 1
+
+                            # Only end speech if silence exceeds threshold
+                            if silence_counter >= silence_threshold:
+                                self.print_alert("", "speech_end")
+                                segment_duration = (
+                                    datetime.now() - self.current_speech_start
+                                ).total_seconds()
+                                self.speech_segments.append(segment_duration)
+                                self.current_speech_start = None
+                                self.last_state = False
+                                silence_counter = 0
+                                print()  # New line after progress bar
 
                 # Small sleep to prevent busy-waiting when buffer is empty
                 if available == 0:
@@ -233,11 +267,28 @@ def main():
     parser.add_argument(
         "--baudrate", type=int, default=921600, help="Baud rate (default: 921600)"
     )
+    parser.add_argument(
+        "--min-silence",
+        type=int,
+        default=500,
+        help="Grace period in milliseconds before ending speech (default: 500ms). Increase this for longer grace period during brief pauses.",
+    )
+    parser.add_argument(
+        "--min-speech",
+        type=int,
+        default=0,
+        help="Minimum speech duration in milliseconds before accepting as speech (default: 0ms)",
+    )
 
     args = parser.parse_args()
 
-    # Create monitor
-    monitor = PCMVADMonitor(args.port, args.baudrate)
+    # Create monitor with smoothing parameters
+    monitor = PCMVADMonitor(
+        args.port,
+        args.baudrate,
+        min_silence_ms=args.min_silence,
+        min_speech_ms=args.min_speech,
+    )
     monitor.print_header()
 
     try:

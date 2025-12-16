@@ -1,0 +1,138 @@
+╔════════════════════════════════════════════════════════════════════════════╗
+║                   VAD GRACE PERIOD IMPLEMENTATION                          ║
+║                        (Speech Pause Tolerance)                            ║
+╚════════════════════════════════════════════════════════════════════════════╝
+
+PROBLEM SOLVED
+──────────────
+✓ VAD was too sensitive to brief silences (breathing, pauses)
+✓ Speech was being cut off mid-thought or mid-sentence
+✓ Natural pauses = separate speech segments (bad)
+
+SOLUTION IMPLEMENTED
+────────────────────
+✓ Added configurable "grace period" (min_silence_duration_ms)
+✓ Grace period = how long VAD waits before ending speech
+✓ Short pause (breathing) no longer ends speech detection
+
+FILES MODIFIED
+──────────────
+1. scripts/vad_stream.py
+   - Added --min-silence and --min-speech parameters
+   - Implemented hysteresis/grace period logic
+   - Enhanced display header with settings
+
+2. pi-aggregator/vad.py
+   - SileroVAD constructor now accepts min_silence_duration_ms
+   - Defaults to 500ms, easily configurable
+
+3. justfile
+   - New commands with presets:
+     * just vad-stream              (500ms - default)
+     * just vad-stream-relaxed      (1000ms - recommended)
+     * just vad-stream-very-relaxed (1500ms - most forgiving)
+     * just vad-stream-aggressive   (200ms - most sensitive)
+     * just vad-stream-custom       (custom milliseconds)
+
+NEW DOCUMENTATION
+─────────────────
+1. QUICK_VAD_GRACE.md
+   - Quick start guide (2 min read)
+   - Recommended starting points
+
+2. VAD_GRACE_PERIOD_GUIDE.md
+   - Complete tuning guide
+   - Use case recommendations
+   - Fine-tuning procedure
+
+3. VAD_GRACE_CHANGES.md
+   - Technical summary of changes
+   - How each piece works
+
+4. GRACE_PERIOD_VISUAL.md
+   - Visual diagrams showing effects
+   - Real-world examples
+
+HOW TO USE
+──────────
+
+IMMEDIATE (Right now):
+  just vad-stream-relaxed
+  
+  This gives 1 second grace period - handles natural breathing pauses.
+
+FINE-TUNE (If needed):
+  just vad-stream-custom min_silence="1200"
+  
+  Replace 1200 with any millisecond value:
+  - Lower = quicker to end (more sensitive)
+  - Higher = waits longer (more forgiving)
+
+EXAMPLES
+────────
+
+Default (500ms):
+  just vad-stream
+  → Good for baseline testing
+
+Classroom (1000ms - RECOMMENDED):
+  just vad-stream-relaxed
+  → Handles natural speech with pauses
+
+Lecture (1500ms):
+  just vad-stream-very-relaxed
+  → Very long pause tolerance
+
+Rapid Speech (200ms):
+  just vad-stream-aggressive
+  → Detects quick speech boundaries
+
+Custom (e.g., 900ms):
+  just vad-stream-custom min_silence="900"
+  → Fine-tune to your exact needs
+
+WHAT YOU'LL OBSERVE
+───────────────────
+
+BEFORE (was):
+  🔴 VOCALS DETECTED
+  🟢 Speech ended (0.3s)  ← Cut off at breath
+  🔴 VOCALS DETECTED
+  🟢 Speech ended (0.2s)  ← New segment
+
+AFTER (now):
+  🔴 VOCALS DETECTED
+  🟢 Speech ended (0.8s)  ← Full sentence with breath = one segment
+
+RECOMMENDATION
+───────────────
+1. Start: just vad-stream-relaxed
+2. Speak naturally (with pauses/breathing)
+3. Watch output for 10-20 seconds
+4. If pauses are still being cut off → use very-relaxed
+5. If speakers are being merged → decrease grace period
+6. When satisfied → remember that command!
+
+NEXT STEPS
+──────────
+✓ Test with your microphone
+✓ Record audio simultaneously (just capture-pcm in another terminal)
+✓ Play back and verify (just play-last)
+✓ Use your favorite setting in production
+
+BACKWARDS COMPATIBLE
+────────────────────
+✓ Default behavior unchanged (500ms if not specified)
+✓ All existing code still works
+✓ MQTT schemas unaffected
+✓ No breaking changes
+
+SYNTAX CHECK
+────────────
+✓ scripts/vad_stream.py - OK
+✓ pi-aggregator/vad.py - OK
+✓ justfile - OK
+
+Ready to use! Start with: just vad-stream-relaxed
+
+═══════════════════════════════════════════════════════════════════════════════

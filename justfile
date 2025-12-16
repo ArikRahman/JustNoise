@@ -15,14 +15,43 @@ flash:
     cd arduino/mictest && pio run -t upload --upload-port {{serial_port}}
     @echo "✅ Firmware flashed successfully"
 
-# Stream raw PCM and run VAD (NEW - no WAV headers, pure continuous streaming)
+# Stream raw PCM and run VAD (DEFAULT: 500ms grace period)
 vad-stream:
-    @echo "🎤 Starting raw PCM streamer with VAD..."
+    @echo "🎤 Starting raw PCM streamer with VAD (500ms grace period)..."
     @echo "💡 Speak near the microphone to see real-time detection!"
+    @echo "💡 This gives a 500ms grace period for brief pauses/breathing"
     @echo ""
     @echo "Note: Make sure ESP32 firmware is flashed first (just flash)"
     @echo ""
-    uv run scripts/vad_stream.py {{serial_port}}
+    uv run scripts/vad_stream.py {{serial_port}} --min-silence 500
+
+# Stream raw PCM with LESS sensitive VAD (longer grace period)
+vad-stream-relaxed:
+    @echo "🎤 Starting raw PCM streamer with VAD (1000ms grace period)..."
+    @echo "💡 This is more forgiving - 1 second of silence before ending speech"
+    @echo ""
+    uv run scripts/vad_stream.py {{serial_port}} --min-silence 1000
+
+# Stream raw PCM with MORE relaxed VAD (very long grace period)
+vad-stream-very-relaxed:
+    @echo "🎤 Starting raw PCM streamer with VAD (1500ms grace period)..."
+    @echo "💡 This is VERY forgiving - 1.5 seconds of silence before ending speech"
+    @echo ""
+    uv run scripts/vad_stream.py {{serial_port}} --min-silence 1500
+
+# Stream raw PCM with AGGRESSIVE VAD (shorter grace period)
+vad-stream-aggressive:
+    @echo "🎤 Starting raw PCM streamer with VAD (200ms grace period)..."
+    @echo "💡 This is more sensitive - quick to detect speech boundaries"
+    @echo ""
+    uv run scripts/vad_stream.py {{serial_port}} --min-silence 200
+
+# Stream raw PCM with CUSTOM VAD grace period
+vad-stream-custom min_silence="1200":
+    @echo "🎤 Starting raw PCM streamer with VAD ({{min_silence}}ms grace period)..."
+    @echo "💡 Custom grace period: {{min_silence}}ms"
+    @echo ""
+    uv run scripts/vad_stream.py {{serial_port}} --min-silence {{min_silence}}
 
 # Capture raw PCM stream to audio files (time-based splitting)
 capture-pcm:
