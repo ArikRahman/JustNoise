@@ -152,6 +152,7 @@ Reference implementation: `pi-aggregator/aggregator.py`.
   - Use 16 kHz PCM input for best model compatibility (resample if necessary).
   - Silero VAD requires exactly 512 samples per chunk for 16kHz (32ms), or 256 for 8kHz.
   - Use `VADIterator` or custom hysteresis to reduce choppy toggles (silero utils provide smoothing helpers).
+  - Recommended settings: min_silence_duration_ms=500 (half second of silence required to end speech), speech_pad_ms=100 (pad segments).
   - Emit both per-window speech fraction (for `noise_profile`) and boundary events (for UI/actuation triggers).
 
 - Testing & Simulation:

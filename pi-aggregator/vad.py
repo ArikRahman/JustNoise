@@ -61,6 +61,7 @@ class SileroVAD:
         """
         self.sample_rate = sample_rate
         self.device = device
+        self.triggered = False  # Track if we're currently in speech state
         
         logger.info("Loading Silero VAD model...")
         self.model, utils = torch.hub.load(
@@ -80,12 +81,15 @@ class SileroVAD:
          self.collect_chunks) = utils
         
         # Initialize VAD iterator for streaming
+        # Adjusted parameters to reduce false stops during brief pauses:
+        # - min_silence_duration_ms: 500ms (increased from 300ms) - need half second of silence to end speech
+        # - speech_pad_ms: 100ms (increased from 30ms) - pad detected segments with 100ms on each side
         self.vad_iterator = self.VADIterator(
             self.model,
             threshold=0.5,
             sampling_rate=sample_rate,
-            min_silence_duration_ms=300,
-            speech_pad_ms=30
+            min_silence_duration_ms=500,
+            speech_pad_ms=100
         )
         
         logger.info("✓ Silero VAD loaded")
@@ -123,24 +127,56 @@ class SileroVAD:
         # Convert to torch tensor
         audio_tensor = torch.from_numpy(audio_float)
         
-        # Process with VAD iterator
+        # Get raw speech probability from model for confidence display
+        with torch.no_grad():
+            speech_prob = self.model(audio_tensor, self.sample_rate).item()
+        
+        # Process with VAD iterator for state tracking (smoothing/hysteresis)
         speech_dict = self.vad_iterator(audio_tensor, return_seconds=False)
         
+        # The VAD iterator returns a dict when a speech segment END is detected
+        # It returns None when continuing in the same state
         if speech_dict:
-            # Speech detected
+            # Speech segment ended
+            self.triggered = False
             return {
-                'speech': True,
-                'confidence': float(speech_dict.get('confidence', 0.0)),
+                'speech': False,  # Speech just ended
+                'confidence': speech_prob,
                 'start_ms': speech_dict.get('start'),
                 'end_ms': speech_dict.get('end')
             }
         else:
-            # No speech or continuing
-            return {'speech': False, 'confidence': 0.0}
+            # Check if speech is currently active
+            # Use probability threshold to determine current state
+            current_speech = speech_prob > 0.5
+            
+            # Detect state change (speech started)
+            if current_speech and not self.triggered:
+                self.triggered = True
+                return {
+                    'speech': True,
+                    'confidence': speech_prob,
+                    'event': 'start'
+                }
+            elif not current_speech and self.triggered:
+                # This shouldn't happen (iterator should catch it) but handle it
+                self.triggered = False
+                return {
+                    'speech': False,
+                    'confidence': speech_prob,
+                    'event': 'end'
+                }
+            else:
+                # Continuing in same state
+                return {
+                    'speech': self.triggered,
+                    'confidence': speech_prob
+                }
     
     def reset(self):
         """Reset VAD iterator state."""
         self.vad_iterator.reset_states()
+        self.triggered = False
 
 
 class VADService:

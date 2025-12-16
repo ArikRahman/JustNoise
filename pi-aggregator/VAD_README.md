@@ -132,8 +132,8 @@ uv run pi-aggregator/vad.py --file recording.wav
 
 - **Frame size:** 512 samples (32ms at 16kHz) — **required by Silero VAD**
 - **Threshold:** 0.5 (default Silero threshold)
-- **Min silence duration:** 300ms — avoid choppy toggles
-- **Speech padding:** 30ms — add padding to detected segments
+- **Min silence duration:** 500ms — need half second of silence to end speech (prevents choppy toggles during brief pauses)
+- **Speech padding:** 100ms — add padding to detected segments for smoother transitions
 
 ### MQTT Topics (in `shared/utils/config.py`)
 
@@ -211,7 +211,23 @@ The first run downloads the Silero VAD model (~1.4 MB) from PyTorch Hub. Ensure 
 ### High false positive rate
 
 - Increase threshold (0.5 → 0.7)
-- Increase `min_silence_duration_ms` (300ms → 500ms)
+- Increase `min_silence_duration_ms` (500ms → 700ms)
+
+### Speech segments too short (choppy)
+
+**This is the most common issue** - VAD ending speech too quickly during natural pauses.
+
+**Solution**: Increase `min_silence_duration_ms` in `pi-aggregator/vad.py`:
+```python
+min_silence_duration_ms=500,  # Default: requires 0.5s of silence to end speech
+# Try increasing to 700-1000ms for longer natural pauses
+```
+
+Also increase padding:
+```python
+speech_pad_ms=100,  # Default: adds 100ms padding on each side
+# Try 150-200ms for smoother transitions
+```
 
 ## References
 
