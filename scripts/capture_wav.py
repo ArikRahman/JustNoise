@@ -22,27 +22,22 @@ def capture_wav(port, output_file, timeout=30):
         ser = serial.Serial(port, baudrate=115200, timeout=5)
         print(f"Connected to {port} at 115200 baud")
         
-        # Try to reset using RTS
-        print("Resetting ESP32...")
-        ser.rts = False
-        time.sleep(0.1)
-        ser.rts = True
-        time.sleep(1)  # Give ESP32 time to restart
-        
-        ser.reset_input_buffer()  # Clear any garbage
+        # Don't reset - just wait for data to arrive
+        # The ESP32 is continuously sending, so we'll catch it
+        print("Waiting for data stream...")
         
         # Look for binary RIFF header (0x52 0x49 0x46 0x46)
         print("Searching for WAV header...")
         buffer = b''
         found_header = False
         timeout_counter = 0
-        max_timeout = 150  # Wait up to 15 seconds
+        max_timeout = 200  # Wait up to 20 seconds
         
         while not found_header and timeout_counter < max_timeout:
             # Read any available data
             available = ser.in_waiting
             if available > 0:
-                data = ser.read(min(available, 256))
+                data = ser.read(min(available, 512))
                 buffer += data
                 
                 # Look for RIFF signature in the buffer
@@ -54,14 +49,13 @@ def capture_wav(port, output_file, timeout=30):
                     break
                 
                 # Debug: show what we're getting
-                if len(buffer) > 0 and len(buffer) % 100 == 0:
+                if len(buffer) > 0 and len(buffer) % 200 == 0:
                     print(f"  ... received {len(buffer)} bytes, searching...")
             else:
                 timeout_counter += 1
                 time.sleep(0.1)
-                if timeout_counter % 20 == 0:
+                if timeout_counter % 30 == 0:
                     print(f"  ... waiting ({timeout_counter * 0.1:.1f}s elapsed)")
-        
         if not found_header:
             print(f"ERROR: Timeout waiting for RIFF header")
             print(f"Read {len(buffer)} bytes total")
@@ -72,21 +66,22 @@ def capture_wav(port, output_file, timeout=30):
         
         # Now read the rest of the header (44 bytes total)
         # We already have 'RIFF' (4 bytes), need 40 more
-        header = buffer[-4:]  # Start with RIFF
+        header = buffer[:44]  # Take first 44 bytes from buffer
+        
+        # If we don't have enough, keep reading
         while len(header) < 44:
             chunk = ser.read(44 - len(header))
             if chunk:
                 header += chunk
-                print(f"Read {len(header)}/44 header bytes...")
             else:
-                time.sleep(0.1)
-        
-        if len(header) < 44:
-            print(f"ERROR: Failed to read complete WAV header (got {len(header)} bytes)")
-            print(f"Header hex: {header.hex()}")
-            return False
+                time.sleep(0.05)
         
         print(f"✓ WAV header received ({len(header)} bytes)")
+        
+        # Validate header starts with RIFF
+        if header[:4] != b'RIFF':
+            print(f"ERROR: Header doesn't start with RIFF: {header[:10].hex()}")
+            return False
         
         # Parse header to get data size
         try:

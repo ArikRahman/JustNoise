@@ -103,20 +103,21 @@ void loop() {
   // Send WAV header
   sendWAVHeader(dataSize);
   
-  // Send dummy samples
-  static unsigned long startTime = millis();
-  unsigned long elapsedTime = millis() - startTime;
+  // Send dummy samples for 10 seconds
+  unsigned long startTime = millis();
+  unsigned long elapsedTime = 0;
   
-  if (elapsedTime < (RECORDING_TIME_SEC * 1000)) {
+  while (elapsedTime < (RECORDING_TIME_SEC * 1000)) {
     for (int i = 0; i < 100; i++) {
       uint16_t sample = 1024 + (rand() % 512);
       Serial.write((uint8_t*)&sample, 2);
     }
     Serial.flush();
     delay(1);
-  } else {
-    // Done - halt
-    while (1) delay(1000);
+    elapsedTime = millis() - startTime;
   }
+  
+  // Wait a moment, then loop again (send another recording)
+  delay(2000);
 }
 
