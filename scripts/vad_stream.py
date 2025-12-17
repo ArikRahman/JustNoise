@@ -46,10 +46,10 @@ class PCMVADMonitor:
         self,
         serial_port,
         baudrate=921600,
-        min_silence_ms=500,
+        min_silence_ms=1500,
         min_speech_ms=0,
         enable_volume_control=False,
-        speech_volume=30,
+        speech_volume=60,
         silence_volume=100,
     ):
         self.serial_port = serial_port
@@ -311,8 +311,8 @@ def main():
     parser.add_argument(
         "--min-silence",
         type=int,
-        default=500,
-        help="Grace period in milliseconds before ending speech (default: 500ms). Increase this for longer grace period during brief pauses.",
+        default=1500,
+        help="Grace period in milliseconds before ending speech (default: 1500ms). Increase this for longer grace period during brief pauses.",
     )
     parser.add_argument(
         "--min-speech",
@@ -328,8 +328,8 @@ def main():
     parser.add_argument(
         "--speech-volume",
         type=int,
-        default=30,
-        help="Volume level when speech is detected (default: 30%%)",
+        default=60,
+        help="Volume level when speech is detected (default: 60%%)",
     )
     parser.add_argument(
         "--silence-volume",

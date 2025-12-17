@@ -72,10 +72,10 @@ vad-stream-relaxed-with-volume:
     uv run scripts/vad_stream.py {{serial_port}} --min-silence 1000 --volume-control
 
 # Stream raw PCM with volume control (CUSTOM volumes and grace period)
-# Usage: just vad-stream-volume-custom 1000 60 100
+# Usage: just vad-stream-volume-custom 1500 60 100
 #   Args: grace_period(ms) speech_volume(%) silence_volume(%)
 #   Example: just vad-stream-volume-custom 1200 50 100
-vad-stream-volume-custom grace_period="1000" speech_volume="30" silence_volume="100":
+vad-stream-volume-custom grace_period="1500" speech_volume="60" silence_volume="100":
     @echo "🎤 Starting VAD with custom volume control..."
     @echo "💡 Grace period: {{grace_period}}ms | Speech volume: {{speech_volume}}% | Silence volume: {{silence_volume}}%"
     @echo ""
@@ -316,3 +316,20 @@ mic-gain-test gain="3":
     uv run scripts/mic_gain_control.py {{serial_port}} --gain {{gain}}
     @echo ""
     @echo "💡 To adjust further, use: just mic-gain-set <level>"
+
+# Start TCP audio server for ESP32 WiFi streaming
+tcp-server host="10.45.232.125" port="8080":
+    @echo "🎵 Starting TCP Audio Server..."
+    @echo "💡 Server will listen on {{host}}:{{port}}"
+    @echo "💡 ESP32 will automatically connect and stream PCM audio"
+    @echo "💡 Press Ctrl+C to stop server"
+    @echo ""
+    uv run scripts/tcp_audio_server.py --host {{host}} --port {{port}}
+
+# Start TCP server with default settings (10.45.232.125:8080)
+tcp-server-default:
+    @echo "🎵 Starting TCP Audio Server (default config)..."
+    @echo "💡 Listening on 10.45.232.125:8080"
+    @echo "💡 ESP32 will connect and stream audio automatically"
+    @echo ""
+    just tcp-server 10.45.232.125 8080
